@@ -5,7 +5,8 @@ import {
   BookOpen,
   CalendarDays,
   ChevronRight,
-  Clock3,
+  FolderKanban,
+  Gauge,
   History,
   LayoutDashboard,
   LogOut,
@@ -40,14 +41,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
-import { formatDuration, formatStudyDate, weekStartString } from "@/lib/date";
+import { formatStudyDate, weekStartString } from "@/lib/date";
 import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
+import { projectColors, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
 
 type DashboardProps = {
   initialRecords: StudyRecord[];
+  initialProjects: StudyProject[];
   today: string;
   user: { displayName: string; email: string };
   loadError: string;
@@ -68,31 +78,42 @@ declare global {
   interface Document { modelContext?: ToolRegistration }
 }
 
-const durationChoices = [25, 45, 60, 90];
+const intensityChoices = [1, 2, 3, 4, 5];
+const colorLabels: Record<string, string> = {
+  blue: "蓝色",
+  teal: "青色",
+  amber: "琥珀",
+  violet: "紫色",
+  rose: "玫红",
+  slate: "灰蓝",
+};
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
   return {
     study_date: record?.study_date || today,
     subject: record?.subject || "",
-    duration_minutes: record?.duration_minutes || 60,
+    project_id: record?.project_id ?? null,
+    intensity_score: record?.intensity_score || 3,
     note: record?.note || "",
   };
 }
 
 async function requestJson(url: string, init: RequestInit) {
   const response = await fetch(url, init);
-  const payload = (await response.json()) as { error?: string; record?: StudyRecord };
+  const payload = (await response.json()) as { error?: string; record?: StudyRecord; project?: StudyProject };
   if (!response.ok) throw new Error(payload.error || "操作失败，请稍后再试。");
   return payload;
 }
 
 function RecordEditor({
   today,
+  projects,
   record = null,
   onSaved,
   compact = false,
 }: {
   today: string;
+  projects: StudyProject[];
   record?: StudyRecord | null;
   onSaved: (record: StudyRecord) => void;
   compact?: boolean;
@@ -144,7 +165,7 @@ function RecordEditor({
         <DialogHeader>
           <p className="section-kicker">{record ? "调整记录" : "新的积累"}</p>
           <DialogTitle>{record ? "编辑学习记录" : "今天学了什么？"}</DialogTitle>
-          <DialogDescription>写下内容和时长，保持简单就好。</DialogDescription>
+          <DialogDescription>写下内容并评估这次学习的投入强度。</DialogDescription>
         </DialogHeader>
         <form className="record-form" onSubmit={submit}>
           <div className="form-row">
@@ -170,25 +191,30 @@ function RecordEditor({
             />
           </div>
           <div className="form-row">
-            <div className="label-line"><Label htmlFor={`duration-${record?.id || "new"}`}>学习时长</Label><span>分钟</span></div>
-            <Input
-              id={`duration-${record?.id || "new"}`}
-              type="number"
-              min={1}
-              max={1440}
-              value={values.duration_minutes}
-              onChange={(event) => setValues({ ...values, duration_minutes: Number(event.target.value) })}
-              required
-            />
-            <div className="duration-choices" aria-label="常用时长">
-              {durationChoices.map((minutes) => (
+            <div className="label-line"><Label>所属项目</Label><span>选填</span></div>
+            <Select
+              value={values.project_id === null ? "none" : String(values.project_id)}
+              onValueChange={(value) => setValues({ ...values, project_id: value === "none" ? null : Number(value) })}
+            >
+              <SelectTrigger className="project-select"><SelectValue placeholder="选择项目" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">未分类</SelectItem>
+                {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="form-row">
+            <div className="label-line"><Label>学习强度</Label><span>{values.intensity_score} / 5</span></div>
+            <div className="intensity-choices" aria-label="学习强度分数">
+              {intensityChoices.map((score) => (
                 <button
-                  key={minutes}
+                  key={score}
                   type="button"
-                  className={values.duration_minutes === minutes ? "active" : ""}
-                  onClick={() => setValues({ ...values, duration_minutes: minutes })}
+                  className={values.intensity_score === score ? "active" : ""}
+                  onClick={() => setValues({ ...values, intensity_score: score })}
+                  aria-label={`强度 ${score} 分`}
                 >
-                  {minutes} 分
+                  <strong>{score}</strong><span>{score === 1 ? "轻松" : score === 2 ? "适中" : score === 3 ? "专注" : score === 4 ? "高强" : "极限"}</span>
                 </button>
               ))}
             </div>
@@ -253,11 +279,13 @@ function DeleteRecord({ record, onDeleted }: { record: StudyRecord; onDeleted: (
 
 function RecordList({
   records,
+  projects,
   today,
   onSaved,
   onDeleted,
 }: {
   records: StudyRecord[];
+  projects: StudyProject[];
   today: string;
   onSaved: (record: StudyRecord) => void;
   onDeleted: (id: number) => void;
@@ -267,8 +295,8 @@ function RecordList({
       <div className="empty-state">
         <span><NotebookPen /></span>
         <h3>从第一条学习记录开始</h3>
-        <p>完成一次学习后，把内容和时长记下来。</p>
-        <RecordEditor today={today} onSaved={onSaved} />
+        <p>完成一次学习后，把内容和强度记下来。</p>
+        <RecordEditor today={today} projects={projects} onSaved={onSaved} />
       </div>
     );
   }
@@ -286,7 +314,7 @@ function RecordList({
         <section className="record-group" key={date}>
           <div className="date-heading">
             <h3>{formatStudyDate(date)}</h3>
-            <span>{formatDuration(items.reduce((sum, item) => sum + item.duration_minutes, 0))}</span>
+            <span>平均强度 {(items.reduce((sum, item) => sum + item.intensity_score, 0) / items.length).toFixed(1)}</span>
           </div>
           <div className="record-stack">
             {items.map((record) => (
@@ -294,11 +322,18 @@ function RecordList({
                 <div className={`subject-mark mark-${record.id % 4}`}>{record.subject.slice(0, 1).toUpperCase()}</div>
                 <div className="record-copy">
                   <h4>{record.subject}</h4>
+                  {record.project_id ? (() => {
+                    const project = projects.find((item) => item.id === record.project_id);
+                    return project ? <span className={`project-pill project-${project.color}`}>{project.name}</span> : null;
+                  })() : null}
                   <p className={record.note ? "" : "muted"}>{record.note || "没有填写备注"}</p>
                 </div>
-                <div className="record-duration"><Clock3 /><strong>{record.duration_minutes}</strong><span>分钟</span></div>
+                <div className="record-intensity" aria-label={`学习强度 ${record.intensity_score} 分`}>
+                  <Gauge /><strong>{record.intensity_score}</strong><span>/ 5</span>
+                  <div className="intensity-meter" aria-hidden="true">{intensityChoices.map((score) => <i key={score} className={score <= record.intensity_score ? "active" : ""} />)}</div>
+                </div>
                 <div className="record-actions">
-                  <RecordEditor today={today} record={record} compact onSaved={onSaved} />
+                  <RecordEditor today={today} projects={projects} record={record} compact onSaved={onSaved} />
                   <DeleteRecord record={record} onDeleted={onDeleted} />
                 </div>
               </article>
@@ -311,8 +346,9 @@ function RecordList({
 }
 
 function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: string }) {
-  const totals = records.reduce<Record<string, number>>((result, record) => {
-    result[record.study_date] = (result[record.study_date] || 0) + record.duration_minutes;
+  const totals = records.reduce<Record<string, { score: number; count: number }>>((result, record) => {
+    const current = result[record.study_date] || { score: 0, count: 0 };
+    result[record.study_date] = { score: current.score + record.intensity_score, count: current.count + 1 };
     return result;
   }, {});
   const end = new Date(`${today}T00:00:00Z`);
@@ -324,14 +360,19 @@ function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: strin
     const date = new Date(start);
     date.setUTCDate(start.getUTCDate() + index);
     const key = date.toISOString().slice(0, 10);
-    const minutes = totals[key] || 0;
+    const total = totals[key];
+    const score = total ? total.score / total.count : 0;
     const future = key > today;
-    const level = future ? -1 : minutes === 0 ? 0 : minutes <= 30 ? 1 : minutes <= 60 ? 2 : minutes <= 120 ? 3 : 4;
-    return { key, minutes, level, future };
+    const level = future ? -1 : Math.round(score);
+    return { key, score, level, future };
   });
   const visibleDays = days.filter((day) => !day.future);
-  const activeDays = visibleDays.filter((day) => day.minutes > 0).length;
-  const totalMinutes = visibleDays.reduce((sum, day) => sum + day.minutes, 0);
+  const activeDays = visibleDays.filter((day) => day.score > 0).length;
+  const startKey = start.toISOString().slice(0, 10);
+  const visibleRecords = records.filter((record) => record.study_date >= startKey && record.study_date <= today);
+  const averageScore = visibleRecords.length
+    ? visibleRecords.reduce((sum, record) => sum + record.intensity_score, 0) / visibleRecords.length
+    : 0;
 
   return (
     <section className="heatmap-card" aria-labelledby="heatmap-title">
@@ -340,7 +381,7 @@ function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: strin
           <p className="section-kicker">CONSISTENCY</p>
           <h2 id="heatmap-title">学习热度</h2>
         </div>
-        <p><strong>{activeDays}</strong> 个活跃日 · {formatDuration(totalMinutes)}</p>
+        <p><strong>{activeDays}</strong> 个活跃日 · 平均强度 {averageScore.toFixed(1)}</p>
       </div>
       <div className="heatmap-scroll">
         <div className="heatmap-body">
@@ -351,22 +392,224 @@ function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: strin
                 key={day.key}
                 dateTime={day.key}
                 className={`heat-cell level-${day.level}`}
-                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${formatDuration(day.minutes)}`}
-                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，学习 ${formatDuration(day.minutes)}`}
+                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.score ? `平均强度 ${day.score.toFixed(1)}` : "无记录"}`}
+                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.score ? `平均强度 ${day.score.toFixed(1)}` : "无学习记录"}`}
               />
             ))}
           </div>
         </div>
       </div>
-      <div className="heatmap-legend" aria-hidden="true"><span>少</span><i className="level-0" /><i className="level-1" /><i className="level-2" /><i className="level-3" /><i className="level-4" /><span>多</span></div>
+      <div className="heatmap-legend" aria-hidden="true"><span>低</span><i className="level-0" /><i className="level-1" /><i className="level-2" /><i className="level-3" /><i className="level-4" /><i className="level-5" /><span>高</span></div>
     </section>
   );
 }
 
-export function StudyDashboard({ initialRecords, today, user, loadError }: DashboardProps) {
+function projectInput(project: StudyProject | null): StudyProjectInput {
+  return {
+    name: project?.name || "",
+    description: project?.description || "",
+    color: project?.color || "blue",
+  };
+}
+
+function ProjectEditor({
+  project = null,
+  onSaved,
+  compact = false,
+}: {
+  project?: StudyProject | null;
+  onSaved: (project: StudyProject) => void;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [values, setValues] = useState(() => projectInput(project));
+
+  function begin() {
+    setValues(projectInput(project));
+    setOpen(true);
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const payload = project ? { ...values, id: project.id } : values;
+      const result = await requestJson("/api/projects", {
+        method: project ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!result.project) throw new Error("没有收到保存结果。");
+      onSaved(result.project);
+      setOpen(false);
+      toast.success(project ? "项目已更新" : "项目已创建");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "项目保存失败，请稍后再试。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
+      <DialogTrigger asChild>
+        {compact ? (
+          <button className="record-action" type="button" onClick={begin} aria-label={`编辑项目 ${project?.name}`}><Pencil /></button>
+        ) : (
+          <Button className="add-button" size="lg" onClick={begin}><Plus /> 新建项目</Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="record-dialog sm:max-w-[520px]">
+        <DialogHeader>
+          <p className="section-kicker">PROJECT</p>
+          <DialogTitle>{project ? "编辑项目" : "建立学习项目"}</DialogTitle>
+          <DialogDescription>把同一目标下的学习记录整理在一起。</DialogDescription>
+        </DialogHeader>
+        <form className="record-form" onSubmit={submit}>
+          <div className="form-row">
+            <Label htmlFor={`project-name-${project?.id || "new"}`}>项目名称</Label>
+            <Input
+              id={`project-name-${project?.id || "new"}`}
+              value={values.name}
+              maxLength={40}
+              placeholder="例如：生成式软件工程"
+              onChange={(event) => setValues({ ...values, name: event.target.value })}
+              autoFocus
+              required
+            />
+          </div>
+          <div className="form-row">
+            <div className="label-line"><Label htmlFor={`project-description-${project?.id || "new"}`}>项目说明</Label><span>选填</span></div>
+            <Textarea
+              id={`project-description-${project?.id || "new"}`}
+              rows={3}
+              maxLength={240}
+              value={values.description}
+              placeholder="这个项目想达成什么目标？"
+              onChange={(event) => setValues({ ...values, description: event.target.value })}
+            />
+          </div>
+          <div className="form-row">
+            <Label>标识颜色</Label>
+            <div className="color-choices" aria-label="项目颜色">
+              {projectColors.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={`color-choice project-${color} ${values.color === color ? "active" : ""}`}
+                  onClick={() => setValues({ ...values, color })}
+                  aria-label={colorLabels[color]}
+                  aria-pressed={values.color === color}
+                ><i /></button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>取消</Button>
+            <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存项目"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteProject({ project, onDeleted }: { project: StudyProject; onDeleted: (id: number) => void }) {
+  const [deleting, setDeleting] = useState(false);
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      await requestJson(`/api/projects?id=${project.id}`, { method: "DELETE" });
+      onDeleted(project.id);
+      toast.success("项目已删除，关联记录已保留");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "项目删除失败，请稍后再试。");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <button className="record-action danger" type="button" aria-label={`删除项目 ${project.name}`}><Trash2 /></button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除“{project.name}”？</AlertDialogTitle>
+          <AlertDialogDescription>项目会被删除，已有学习记录将保留并归入“未分类”。</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>保留项目</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={remove} disabled={deleting}>{deleting ? "删除中…" : "确认删除"}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function ProjectBoard({
+  projects,
+  records,
+  onSaved,
+  onDeleted,
+  onView,
+}: {
+  projects: StudyProject[];
+  records: StudyRecord[];
+  onSaved: (project: StudyProject) => void;
+  onDeleted: (id: number) => void;
+  onView: (id: number) => void;
+}) {
+  if (!projects.length) {
+    return (
+      <div className="empty-state project-empty">
+        <span><FolderKanban /></span>
+        <h3>创建第一个学习项目</h3>
+        <p>按课程、目标或作品整理你的学习记录。</p>
+        <ProjectEditor onSaved={onSaved} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="project-grid">
+      {projects.map((project) => {
+        const projectRecords = records.filter((record) => record.project_id === project.id);
+        const average = projectRecords.length
+          ? projectRecords.reduce((sum, record) => sum + record.intensity_score, 0) / projectRecords.length
+          : 0;
+        return (
+          <article className={`project-card project-${project.color}`} key={project.id}>
+            <div className="project-card-top">
+              <span className="project-icon"><FolderKanban /></span>
+              <div className="record-actions">
+                <ProjectEditor project={project} compact onSaved={onSaved} />
+                <DeleteProject project={project} onDeleted={onDeleted} />
+              </div>
+            </div>
+            <h2>{project.name}</h2>
+            <p>{project.description || "还没有项目说明"}</p>
+            <div className="project-stats">
+              <span><strong>{projectRecords.length}</strong> 条记录</span>
+              <span><strong>{average ? average.toFixed(1) : "—"}</strong> 平均强度</span>
+            </div>
+            <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function StudyDashboard({ initialRecords, initialProjects, today, user, loadError }: DashboardProps) {
   const [records, setRecords] = useState(initialRecords);
+  const [projects, setProjects] = useState(initialProjects);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState("all");
   const weekStart = weekStartString(today);
 
   const saveRecord = useCallback((record: StudyRecord) => {
@@ -378,6 +621,21 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
     setRecords((current) => current.filter((item) => item.id !== id));
   }, []);
 
+  const saveProject = useCallback((project: StudyProject) => {
+    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+  }, []);
+
+  const deleteProject = useCallback((id: number) => {
+    setProjects((current) => current.filter((item) => item.id !== id));
+    setRecords((current) => current.map((record) => record.project_id === id ? { ...record, project_id: null } : record));
+    setProjectFilter((current) => current === String(id) ? "all" : current);
+  }, []);
+
+  const viewProject = useCallback((id: number) => {
+    setProjectFilter(String(id));
+    setView("history");
+  }, []);
+
   useEffect(() => {
     const context = document.modelContext;
     if (!context?.registerTool) return;
@@ -385,16 +643,17 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
     void Promise.resolve(context.registerTool({
       name: "create_study_record",
       title: "添加学习记录",
-      description: "添加一条学习内容、日期、时长和备注，并更新当前学习仪表盘。",
+      description: "添加一条学习内容、日期、强度和备注，并更新当前学习仪表盘。",
       inputSchema: {
         type: "object",
         properties: {
           study_date: { type: "string", description: "YYYY-MM-DD 格式的日期" },
           subject: { type: "string", minLength: 1, maxLength: 80 },
-          duration_minutes: { type: "integer", minimum: 1, maximum: 1440 },
+          project_id: { type: ["integer", "null"], description: "所属项目 ID，可不填" },
+          intensity_score: { type: "integer", minimum: 1, maximum: 5, description: "学习强度，1 到 5 分" },
           note: { type: "string", maxLength: 2000 },
         },
-        required: ["study_date", "subject", "duration_minutes"],
+        required: ["study_date", "subject", "intensity_score"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, untrustedContentHint: false },
@@ -403,26 +662,55 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
         const result = await requestJson("/api/records", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...value, note: value.note || "" }),
+          body: JSON.stringify({ ...value, project_id: value.project_id ?? null, note: value.note || "" }),
         });
         if (!result.record) throw new Error("记录没有保存成功。");
         saveRecord(result.record);
         return { id: result.record.id, status: "saved", subject: result.record.subject };
       },
     }, { signal: lifecycle.signal })).catch(() => undefined);
+    void Promise.resolve(context.registerTool({
+      name: "create_study_project",
+      title: "创建学习项目",
+      description: "创建一个学习项目，用来整理相关学习记录。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 40 },
+          description: { type: "string", maxLength: 240 },
+          color: { type: "string", enum: [...projectColors] },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      execute: async (input) => {
+        const value = input as Partial<StudyProjectInput>;
+        const result = await requestJson("/api/projects", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: value.name, description: value.description || "", color: value.color || "blue" }),
+        });
+        if (!result.project) throw new Error("项目没有保存成功。");
+        saveProject(result.project);
+        return { id: result.project.id, status: "saved", name: result.project.name };
+      },
+    }, { signal: lifecycle.signal })).catch(() => undefined);
     return () => lifecycle.abort();
-  }, [saveRecord]);
+  }, [saveProject, saveRecord]);
 
   const todayRecords = useMemo(() => records.filter((record) => record.study_date === today), [records, today]);
   const weekRecords = useMemo(
     () => records.filter((record) => record.study_date >= weekStart && record.study_date <= today),
     [records, today, weekStart],
   );
-  const todayMinutes = todayRecords.reduce((sum, record) => sum + record.duration_minutes, 0);
-  const weekMinutes = weekRecords.reduce((sum, record) => sum + record.duration_minutes, 0);
+  const todayIntensity = todayRecords.length ? todayRecords.reduce((sum, record) => sum + record.intensity_score, 0) / todayRecords.length : 0;
+  const weekIntensity = weekRecords.length ? weekRecords.reduce((sum, record) => sum + record.intensity_score, 0) / weekRecords.length : 0;
   const filteredRecords = records.filter((record) => {
     const needle = query.trim().toLowerCase();
-    return !needle || `${record.subject} ${record.note}`.toLowerCase().includes(needle);
+    const project = projects.find((item) => item.id === record.project_id);
+    const matchesProject = projectFilter === "all" || (projectFilter === "none" ? record.project_id === null : record.project_id === Number(projectFilter));
+    return matchesProject && (!needle || `${record.subject} ${record.note} ${project?.name || ""}`.toLowerCase().includes(needle));
   });
   const firstName = user.displayName.includes("@") ? "同学" : user.displayName.split(/\s+/)[0];
 
@@ -433,15 +721,16 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
           <span className="brand-mark"><BookOpen /></span>
           <span><strong>研习簿</strong><small>STUDY LOG</small></span>
         </div>
-        <TabsList className="side-nav" orientation="vertical">
+        <TabsList className="side-nav">
           <TabsTrigger value="dashboard"><LayoutDashboard />今日概览</TabsTrigger>
           <TabsTrigger value="history"><History />历史记录</TabsTrigger>
+          <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
         </TabsList>
         <div className="sidebar-note">
-          <span>本周节奏</span>
-          <strong>{formatDuration(weekMinutes)}</strong>
-          <Progress value={Math.min(100, (weekMinutes / 600) * 100)} />
-          <small>每一次专注都算数</small>
+          <span>本周平均强度</span>
+          <strong>{weekIntensity ? `${weekIntensity.toFixed(1)} / 5` : "尚无记录"}</strong>
+          <Progress value={weekIntensity * 20} />
+          <small>{weekRecords.length} 次学习记录</small>
         </div>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
@@ -457,18 +746,18 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
               <p className="section-kicker"><CalendarDays />{formatStudyDate(today)}</p>
               <h1>{firstName}，今天学了什么？</h1>
             </div>
-            <RecordEditor today={today} onSaved={saveRecord} />
+            <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
           </header>
           {loadError ? <p className="data-error">{loadError}</p> : null}
           <section className="stats-grid" aria-label="学习统计">
             <article className="focus-card">
-              <div className="focus-copy"><span>今日专注</span><strong>{todayMinutes}<small>分钟</small></strong></div>
-              <div className="focus-ring" style={{ "--progress": `${Math.min(100, (todayMinutes / 120) * 100) * 3.6}deg` } as React.CSSProperties}>
-                <span>{Math.min(100, Math.round((todayMinutes / 120) * 100))}%</span>
+              <div className="focus-copy"><span>今日学习强度</span><strong>{todayIntensity ? todayIntensity.toFixed(1) : "—"}<small>/ 5</small></strong></div>
+              <div className="focus-ring" style={{ "--progress": `${todayIntensity * 72}deg` } as React.CSSProperties}>
+                <span>{todayRecords.length ? `${todayRecords.length} 次` : "待记录"}</span>
               </div>
-              <div className="focus-progress"><Progress value={Math.min(100, (todayMinutes / 120) * 100)} /><p>{todayMinutes >= 120 ? "今日目标已完成" : `距 2 小时目标还差 ${120 - todayMinutes} 分钟`}</p></div>
+              <div className="focus-progress"><Progress value={todayIntensity * 20} /><p>{todayRecords.length ? "根据今日所有记录计算平均强度" : "添加记录后即可看见今日强度"}</p></div>
             </article>
-            <article className="stat-card"><span>本周累计</span><strong>{(weekMinutes / 60).toFixed(1)}</strong><small>小时</small><p>从周一到今天</p></article>
+            <article className="stat-card"><span>本周平均强度</span><strong>{weekIntensity ? weekIntensity.toFixed(1) : "—"}</strong><small>/ 5</small><p>从周一到今天</p></article>
             <article className="stat-card"><span>本周记录</span><strong>{weekRecords.length}</strong><small>次</small><p>{weekRecords.length ? "正在稳步积累" : "等待第一条记录"}</p></article>
           </section>
           <StudyHeatmap records={records} today={today} />
@@ -477,25 +766,44 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
               <div><p className="section-kicker">RECENT</p><h2>最近记录</h2></div>
               <button type="button" onClick={() => setView("history")}>查看全部 <ChevronRight /></button>
             </div>
-            <RecordList records={records.slice(0, 6)} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />
+            <RecordList records={records.slice(0, 6)} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />
           </section>
         </TabsContent>
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {records.length} 条，累计学习 {formatDuration(records.reduce((sum, item) => sum + item.duration_minutes, 0))}</p></div>
-            <RecordEditor today={today} onSaved={saveRecord} />
+            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {records.length} 条学习记录 · 平均强度 {records.length ? (records.reduce((sum, item) => sum + item.intensity_score, 0) / records.length).toFixed(1) : "—"}</p></div>
+            <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
           </header>
-          <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索学习内容或备注" aria-label="搜索学习记录" />{query ? <span>{filteredRecords.length} 条结果</span> : null}</div>
+          <div className="history-filters">
+            <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索学习记录" />{query ? <span>{filteredRecords.length} 条结果</span> : null}</div>
+            <Select value={projectFilter} onValueChange={setProjectFilter}>
+              <SelectTrigger className="history-project-filter"><SelectValue placeholder="全部项目" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部项目</SelectItem>
+                <SelectItem value="none">未分类</SelectItem>
+                {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <section className="records-section history-records">
-            <RecordList records={filteredRecords} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />
+            <RecordList records={filteredRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />
           </section>
+        </TabsContent>
+
+        <TabsContent value="projects" className="view-content">
+          <header className="topbar history-header">
+            <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1><p className="page-description">用项目整理长期目标、课程和正在推进的作品。</p></div>
+            <ProjectEditor onSaved={saveProject} />
+          </header>
+          <ProjectBoard projects={projects} records={records} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} />
         </TabsContent>
       </main>
 
       <TabsList className="mobile-nav">
         <TabsTrigger value="dashboard"><LayoutDashboard />今日</TabsTrigger>
         <TabsTrigger value="history"><History />历史</TabsTrigger>
+        <TabsTrigger value="projects"><FolderKanban />项目</TabsTrigger>
       </TabsList>
       <Toaster position="top-center" richColors />
     </Tabs>

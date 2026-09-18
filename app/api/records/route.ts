@@ -23,7 +23,8 @@ async function readInput(request: Request): Promise<StudyRecordInput> {
   return {
     study_date: String(payload.study_date || ""),
     subject: String(payload.subject || "").trim(),
-    duration_minutes: Number(payload.duration_minutes),
+    project_id: payload.project_id === null || payload.project_id === undefined ? null : Number(payload.project_id),
+    intensity_score: Number(payload.intensity_score),
     note: String(payload.note || "").trim(),
   };
 }
@@ -63,7 +64,8 @@ export async function PATCH(request: Request) {
     const input: StudyRecordInput = {
       study_date: String(payload.study_date || ""),
       subject: String(payload.subject || "").trim(),
-      duration_minutes: Number(payload.duration_minutes),
+      project_id: payload.project_id === null || payload.project_id === undefined ? null : Number(payload.project_id),
+      intensity_score: Number(payload.intensity_score),
       note: String(payload.note || "").trim(),
     };
     if (!Number.isInteger(id) || id < 1) return jsonError("找不到要修改的记录。", 400);

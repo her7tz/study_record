@@ -24,10 +24,3 @@ export function formatStudyDate(value: string) {
     weekday: "short",
   }).format(new Date(`${value}T00:00:00Z`));
 }
-
-export function formatDuration(minutes: number) {
-  if (minutes < 60) return `${minutes} 分钟`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest ? `${hours} 小时 ${rest} 分` : `${hours} 小时`;
-}
