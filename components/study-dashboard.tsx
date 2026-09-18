@@ -310,6 +310,59 @@ function RecordList({
   );
 }
 
+function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: string }) {
+  const totals = records.reduce<Record<string, number>>((result, record) => {
+    result[record.study_date] = (result[record.study_date] || 0) + record.duration_minutes;
+    return result;
+  }, {});
+  const end = new Date(`${today}T00:00:00Z`);
+  const weekday = end.getUTCDay();
+  const mondayDistance = weekday === 0 ? 6 : weekday - 1;
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - mondayDistance - 11 * 7);
+  const days = Array.from({ length: 84 }, (_, index) => {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + index);
+    const key = date.toISOString().slice(0, 10);
+    const minutes = totals[key] || 0;
+    const future = key > today;
+    const level = future ? -1 : minutes === 0 ? 0 : minutes <= 30 ? 1 : minutes <= 60 ? 2 : minutes <= 120 ? 3 : 4;
+    return { key, minutes, level, future };
+  });
+  const visibleDays = days.filter((day) => !day.future);
+  const activeDays = visibleDays.filter((day) => day.minutes > 0).length;
+  const totalMinutes = visibleDays.reduce((sum, day) => sum + day.minutes, 0);
+
+  return (
+    <section className="heatmap-card" aria-labelledby="heatmap-title">
+      <div className="heatmap-heading">
+        <div>
+          <p className="section-kicker">CONSISTENCY</p>
+          <h2 id="heatmap-title">学习热度</h2>
+        </div>
+        <p><strong>{activeDays}</strong> 个活跃日 · {formatDuration(totalMinutes)}</p>
+      </div>
+      <div className="heatmap-scroll">
+        <div className="heatmap-body">
+          <div className="weekday-labels" aria-hidden="true"><span>一</span><span>三</span><span>五</span></div>
+          <div className="heatmap-grid" role="grid" aria-label="近 12 周学习热度">
+            {days.map((day) => (
+              <time
+                key={day.key}
+                dateTime={day.key}
+                className={`heat-cell level-${day.level}`}
+                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${formatDuration(day.minutes)}`}
+                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，学习 ${formatDuration(day.minutes)}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="heatmap-legend" aria-hidden="true"><span>少</span><i className="level-0" /><i className="level-1" /><i className="level-2" /><i className="level-3" /><i className="level-4" /><span>多</span></div>
+    </section>
+  );
+}
+
 export function StudyDashboard({ initialRecords, today, user, loadError }: DashboardProps) {
   const [records, setRecords] = useState(initialRecords);
   const [view, setView] = useState("dashboard");
@@ -418,6 +471,7 @@ export function StudyDashboard({ initialRecords, today, user, loadError }: Dashb
             <article className="stat-card"><span>本周累计</span><strong>{(weekMinutes / 60).toFixed(1)}</strong><small>小时</small><p>从周一到今天</p></article>
             <article className="stat-card"><span>本周记录</span><strong>{weekRecords.length}</strong><small>次</small><p>{weekRecords.length ? "正在稳步积累" : "等待第一条记录"}</p></article>
           </section>
+          <StudyHeatmap records={records} today={today} />
           <section className="records-section">
             <div className="section-heading">
               <div><p className="section-kicker">RECENT</p><h2>最近记录</h2></div>
