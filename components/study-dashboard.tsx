@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
+  CalendarRange,
   CalendarDays,
   ChevronRight,
   FolderKanban,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Target,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -53,7 +55,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
 import { formatStudyDate, weekStartString } from "@/lib/date";
 import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
-import { projectColors, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
+import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
 
 type DashboardProps = {
   initialRecords: StudyRecord[];
@@ -86,6 +88,11 @@ const colorLabels: Record<string, string> = {
   violet: "紫色",
   rose: "玫红",
   slate: "灰蓝",
+};
+const statusLabels: Record<ProjectStatus, string> = {
+  active: "进行中",
+  paused: "已暂停",
+  completed: "已完成",
 };
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
@@ -345,8 +352,14 @@ function RecordList({
   );
 }
 
-function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: string }) {
-  const totals = records.reduce<Record<string, { score: number; count: number }>>((result, record) => {
+function StudyHeatmap({ records, projects, today }: { records: StudyRecord[]; projects: StudyProject[]; today: string }) {
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const filteredRecords = records.filter((record) => (
+    projectFilter === "all"
+      || (projectFilter === "none" ? record.project_id === null : record.project_id === Number(projectFilter))
+  ));
+  const totals = filteredRecords.reduce<Record<string, { score: number; count: number }>>((result, record) => {
     const current = result[record.study_date] || { score: 0, count: 0 };
     result[record.study_date] = { score: current.score + record.intensity_score, count: current.count + 1 };
     return result;
@@ -369,10 +382,14 @@ function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: strin
   const visibleDays = days.filter((day) => !day.future);
   const activeDays = visibleDays.filter((day) => day.score > 0).length;
   const startKey = start.toISOString().slice(0, 10);
-  const visibleRecords = records.filter((record) => record.study_date >= startKey && record.study_date <= today);
+  const visibleRecords = filteredRecords.filter((record) => record.study_date >= startKey && record.study_date <= today);
   const averageScore = visibleRecords.length
     ? visibleRecords.reduce((sum, record) => sum + record.intensity_score, 0) / visibleRecords.length
     : 0;
+
+  const selectedRecords = selectedDate
+    ? filteredRecords.filter((record) => record.study_date === selectedDate)
+    : [];
 
   return (
     <section className="heatmap-card" aria-labelledby="heatmap-title">
@@ -381,17 +398,35 @@ function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: strin
           <p className="section-kicker">CONSISTENCY</p>
           <h2 id="heatmap-title">学习热度</h2>
         </div>
-        <p><strong>{activeDays}</strong> 个活跃日 · 平均强度 {averageScore.toFixed(1)}</p>
+        <div className="heatmap-summary">
+          <Select
+            value={projectFilter}
+            onValueChange={(value) => {
+              setProjectFilter(value);
+              setSelectedDate(null);
+            }}
+          >
+            <SelectTrigger className="heatmap-project-filter" aria-label="按项目筛选热度"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部项目</SelectItem>
+              <SelectItem value="none">未分类</SelectItem>
+              {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p><strong>{activeDays}</strong> 个活跃日 · 平均强度 {averageScore.toFixed(1)}</p>
+        </div>
       </div>
       <div className="heatmap-scroll">
         <div className="heatmap-body">
           <div className="weekday-labels" aria-hidden="true"><span>一</span><span>三</span><span>五</span></div>
           <div className="heatmap-grid" role="grid" aria-label="近 12 周学习热度">
             {days.map((day) => (
-              <time
+              <button
                 key={day.key}
-                dateTime={day.key}
-                className={`heat-cell level-${day.level}`}
+                type="button"
+                disabled={day.future}
+                className={`heat-cell level-${day.level} ${selectedDate === day.key ? "selected" : ""}`}
+                onClick={() => setSelectedDate(day.key)}
                 title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.score ? `平均强度 ${day.score.toFixed(1)}` : "无记录"}`}
                 aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.score ? `平均强度 ${day.score.toFixed(1)}` : "无学习记录"}`}
               />
@@ -400,6 +435,38 @@ function StudyHeatmap({ records, today }: { records: StudyRecord[]; today: strin
         </div>
       </div>
       <div className="heatmap-legend" aria-hidden="true"><span>低</span><i className="level-0" /><i className="level-1" /><i className="level-2" /><i className="level-3" /><i className="level-4" /><i className="level-5" /><span>高</span></div>
+      <Dialog open={Boolean(selectedDate)} onOpenChange={(open) => !open && setSelectedDate(null)}>
+        <DialogContent className="heatmap-dialog sm:max-w-[520px]">
+          <DialogHeader>
+            <p className="section-kicker">DAY REVIEW</p>
+            <DialogTitle>{selectedDate ? formatStudyDate(selectedDate) : "当天记录"}</DialogTitle>
+            <DialogDescription>
+              {selectedRecords.length
+                ? `${selectedRecords.length} 条学习记录 · 平均强度 ${(selectedRecords.reduce((sum, record) => sum + record.intensity_score, 0) / selectedRecords.length).toFixed(1)}`
+                : "这一天还没有学习记录。"}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRecords.length ? (
+            <div className="heatmap-day-list">
+              {selectedRecords.map((record) => {
+                const project = projects.find((item) => item.id === record.project_id);
+                return (
+                  <article key={record.id}>
+                    <div>
+                      <h3>{record.subject}</h3>
+                      {project ? <span className={`project-pill project-${project.color}`}>{project.name}</span> : <span className="day-unclassified">未分类</span>}
+                      {record.note ? <p>{record.note}</p> : null}
+                    </div>
+                    <strong><Gauge />{record.intensity_score}<small>/5</small></strong>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="heatmap-day-empty"><NotebookPen /><p>从“添加学习记录”开始积累这一天。</p></div>
+          )}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -408,6 +475,10 @@ function projectInput(project: StudyProject | null): StudyProjectInput {
   return {
     name: project?.name || "",
     description: project?.description || "",
+    goal: project?.goal || "",
+    status: project?.status || "active",
+    start_date: project?.start_date || null,
+    target_date: project?.target_date || null,
     color: project?.color || "blue",
   };
 }
@@ -460,7 +531,7 @@ function ProjectEditor({
           <Button className="add-button" size="lg" onClick={begin}><Plus /> 新建项目</Button>
         )}
       </DialogTrigger>
-      <DialogContent className="record-dialog sm:max-w-[520px]">
+      <DialogContent className="record-dialog sm:max-w-[600px]">
         <DialogHeader>
           <p className="section-kicker">PROJECT</p>
           <DialogTitle>{project ? "编辑项目" : "建立学习项目"}</DialogTitle>
@@ -486,9 +557,50 @@ function ProjectEditor({
               rows={3}
               maxLength={240}
               value={values.description}
-              placeholder="这个项目想达成什么目标？"
+              placeholder="补充课程、作品或学习范围"
               onChange={(event) => setValues({ ...values, description: event.target.value })}
             />
+          </div>
+          <div className="form-row">
+            <div className="label-line"><Label htmlFor={`project-goal-${project?.id || "new"}`}>项目目标</Label><span>选填</span></div>
+            <Textarea
+              id={`project-goal-${project?.id || "new"}`}
+              rows={3}
+              maxLength={500}
+              value={values.goal}
+              placeholder="例如：完成一个可发布的学习记录网站"
+              onChange={(event) => setValues({ ...values, goal: event.target.value })}
+            />
+          </div>
+          <div className="project-form-grid">
+            <div className="form-row">
+              <Label>项目状态</Label>
+              <Select value={values.status} onValueChange={(status) => setValues({ ...values, status: status as ProjectStatus })}>
+                <SelectTrigger className="project-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {projectStatuses.map((status) => <SelectItem key={status} value={status}>{statusLabels[status]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="form-row">
+              <div className="label-line"><Label htmlFor={`project-start-${project?.id || "new"}`}>开始日期</Label><span>选填</span></div>
+              <Input
+                id={`project-start-${project?.id || "new"}`}
+                type="date"
+                value={values.start_date || ""}
+                onChange={(event) => setValues({ ...values, start_date: event.target.value || null })}
+              />
+            </div>
+            <div className="form-row">
+              <div className="label-line"><Label htmlFor={`project-target-${project?.id || "new"}`}>计划完成</Label><span>选填</span></div>
+              <Input
+                id={`project-target-${project?.id || "new"}`}
+                type="date"
+                value={values.target_date || ""}
+                min={values.start_date || undefined}
+                onChange={(event) => setValues({ ...values, target_date: event.target.value || null })}
+              />
+            </div>
           </div>
           <div className="form-row">
             <Label>标识颜色</Label>
@@ -584,7 +696,10 @@ function ProjectBoard({
         return (
           <article className={`project-card project-${project.color}`} key={project.id}>
             <div className="project-card-top">
-              <span className="project-icon"><FolderKanban /></span>
+              <div className="project-card-identity">
+                <span className="project-icon"><FolderKanban /></span>
+                <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
+              </div>
               <div className="record-actions">
                 <ProjectEditor project={project} compact onSaved={onSaved} />
                 <DeleteProject project={project} onDeleted={onDeleted} />
@@ -592,6 +707,10 @@ function ProjectBoard({
             </div>
             <h2>{project.name}</h2>
             <p>{project.description || "还没有项目说明"}</p>
+            {project.goal ? <div className="project-goal"><Target /><div><span>项目目标</span><p>{project.goal}</p></div></div> : null}
+            {(project.start_date || project.target_date) ? (
+              <div className="project-dates"><CalendarRange /><span>{project.start_date ? `开始 ${project.start_date}` : "未设开始日期"}</span><i /> <span>{project.target_date ? `计划 ${project.target_date}` : "未设完成日期"}</span></div>
+            ) : null}
             <div className="project-stats">
               <span><strong>{projectRecords.length}</strong> 条记录</span>
               <span><strong>{average ? average.toFixed(1) : "—"}</strong> 平均强度</span>
@@ -679,6 +798,10 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
           name: { type: "string", minLength: 1, maxLength: 40 },
           description: { type: "string", maxLength: 240 },
           color: { type: "string", enum: [...projectColors] },
+          goal: { type: "string", maxLength: 500 },
+          status: { type: "string", enum: [...projectStatuses] },
+          start_date: { type: ["string", "null"], description: "YYYY-MM-DD 格式的开始日期" },
+          target_date: { type: ["string", "null"], description: "YYYY-MM-DD 格式的计划完成日期" },
         },
         required: ["name"],
         additionalProperties: false,
@@ -689,7 +812,15 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
         const result = await requestJson("/api/projects", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: value.name, description: value.description || "", color: value.color || "blue" }),
+          body: JSON.stringify({
+            name: value.name,
+            description: value.description || "",
+            goal: value.goal || "",
+            status: value.status || "active",
+            start_date: value.start_date || null,
+            target_date: value.target_date || null,
+            color: value.color || "blue",
+          }),
         });
         if (!result.project) throw new Error("项目没有保存成功。");
         saveProject(result.project);
@@ -760,7 +891,7 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
             <article className="stat-card"><span>本周平均强度</span><strong>{weekIntensity ? weekIntensity.toFixed(1) : "—"}</strong><small>/ 5</small><p>从周一到今天</p></article>
             <article className="stat-card"><span>本周记录</span><strong>{weekRecords.length}</strong><small>次</small><p>{weekRecords.length ? "正在稳步积累" : "等待第一条记录"}</p></article>
           </section>
-          <StudyHeatmap records={records} today={today} />
+          <StudyHeatmap records={records} projects={projects} today={today} />
           <section className="records-section">
             <div className="section-heading">
               <div><p className="section-kicker">RECENT</p><h2>最近记录</h2></div>

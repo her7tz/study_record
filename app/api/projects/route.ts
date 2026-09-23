@@ -4,9 +4,11 @@ import {
   insertProject,
   listProjects,
   projectColors,
+  projectStatuses,
   removeProject,
   validateProject,
   type ProjectColor,
+  type ProjectStatus,
   type StudyProjectInput,
 } from "@/lib/projects";
 
@@ -18,9 +20,14 @@ function jsonError(message: string, status: number) {
 
 function readProjectInput(payload: Partial<StudyProjectInput>): StudyProjectInput {
   const requestedColor = String(payload.color || "blue") as ProjectColor;
+  const requestedStatus = String(payload.status || "active") as ProjectStatus;
   return {
     name: String(payload.name || "").trim(),
     description: String(payload.description || "").trim(),
+    goal: String(payload.goal || "").trim(),
+    status: projectStatuses.includes(requestedStatus) ? requestedStatus : "active",
+    start_date: payload.start_date ? String(payload.start_date) : null,
+    target_date: payload.target_date ? String(payload.target_date) : null,
     color: projectColors.includes(requestedColor) ? requestedColor : "blue",
   };
 }
