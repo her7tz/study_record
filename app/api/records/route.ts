@@ -29,11 +29,27 @@ async function readInput(request: Request): Promise<StudyRecordInput> {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await requireApiUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
-    return Response.json({ records: await listRecords(user.userId) });
+    const params = new URL(request.url).searchParams;
+    const requestedLimit = Number(params.get("limit") || 50);
+    const requestedOffset = Number(params.get("offset") || 0);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+    const offset = Number.isInteger(requestedOffset) ? Math.max(requestedOffset, 0) : 0;
+    const rawProject = params.get("project_id");
+    const projectId = rawProject === "none" ? null : rawProject ? Number(rawProject) : undefined;
+    if (typeof projectId === "number" && (!Number.isInteger(projectId) || projectId < 1)) return jsonError("请选择有效项目。", 400);
+    const date = params.get("date") || undefined;
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return jsonError("请选择有效日期。", 400);
+    return Response.json(await listRecords(user.userId, {
+      limit,
+      offset,
+      projectId,
+      date,
+      query: (params.get("q") || "").trim().slice(0, 120),
+    }));
   } catch (error) {
     console.error("records:get", error);
     return jsonError("暂时无法读取学习记录。", 503);

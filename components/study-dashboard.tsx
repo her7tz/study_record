@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BookOpen,
   CalendarRange,
   CalendarDays,
   ChevronRight,
+  Flame,
   FolderKanban,
   Gauge,
   History,
@@ -16,8 +17,10 @@ import {
   Plus,
   Search,
   Target,
+  TrendingUp,
   Trash2,
 } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -31,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import {
   Dialog,
   DialogContent,
@@ -53,12 +57,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
-import { formatStudyDate, weekStartString } from "@/lib/date";
+import { formatStudyDate } from "@/lib/date";
+import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
 import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
 import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
 
 type DashboardProps = {
   initialRecords: StudyRecord[];
+  initialRecordTotal: number;
+  initialAnalytics: StudyAnalytics;
   initialProjects: StudyProject[];
   today: string;
   user: { displayName: string; email: string };
@@ -94,6 +101,9 @@ const statusLabels: Record<ProjectStatus, string> = {
   paused: "已暂停",
   completed: "已完成",
 };
+const trendConfig = {
+  average_intensity: { label: "平均强度", color: "#2254d1" },
+} satisfies ChartConfig;
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
   return {
@@ -107,7 +117,17 @@ function recordInput(record: StudyRecord | null, today: string): StudyRecordInpu
 
 async function requestJson(url: string, init: RequestInit) {
   const response = await fetch(url, init);
-  const payload = (await response.json()) as { error?: string; record?: StudyRecord; project?: StudyProject };
+  const payload = (await response.json()) as {
+    error?: string;
+    record?: StudyRecord;
+    project?: StudyProject;
+    projects?: StudyProject[];
+    records?: StudyRecord[];
+    total?: number;
+    average_intensity?: number;
+    analytics?: StudyAnalytics;
+    heatmap?: HeatmapDay[];
+  };
   if (!response.ok) throw new Error(payload.error || "操作失败，请稍后再试。");
   return payload;
 }
@@ -352,18 +372,57 @@ function RecordList({
   );
 }
 
-function StudyHeatmap({ records, projects, today }: { records: StudyRecord[]; projects: StudyProject[]; today: string }) {
+function StudyTrend({ analytics }: { analytics: StudyAnalytics }) {
+  const activeDays = analytics.trend.filter((day) => day.count > 0).length;
+  const recent = analytics.trend.slice(-7);
+  const previous = analytics.trend.slice(0, 7);
+  const average = (days: StudyAnalytics["trend"]) => {
+    const learned = days.filter((day) => day.count > 0);
+    return learned.length ? learned.reduce((sum, day) => sum + day.average_intensity, 0) / learned.length : 0;
+  };
+  const change = average(recent) - average(previous);
+
+  return (
+    <section className="trend-card" aria-labelledby="trend-title">
+      <div className="trend-heading">
+        <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天趋势</h2></div>
+        <div className="trend-summary">
+          <span><strong>{activeDays}</strong> 个学习日</span>
+          <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change.toFixed(1)} 较前 7 天</span>
+        </div>
+      </div>
+      <ChartContainer config={trendConfig} className="trend-chart" initialDimension={{ width: 760, height: 220 }}>
+        <AreaChart data={analytics.trend} margin={{ top: 12, right: 10, left: -22, bottom: 0 }}>
+          <defs>
+            <linearGradient id="intensity-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-average_intensity)" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="var(--color-average_intensity)" stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} strokeDasharray="3 5" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
+          <YAxis domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} tickLine={false} axisLine={false} width={28} />
+          <ChartTooltip
+            cursor={{ stroke: "#9db4f0", strokeDasharray: "3 3" }}
+            content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">平均强度 {Number(value).toFixed(1)} / 5</span>} />}
+          />
+          <Area type="monotone" dataKey="average_intensity" stroke="var(--color-average_intensity)" strokeWidth={2.5} fill="url(#intensity-fill)" activeDot={{ r: 5 }} />
+        </AreaChart>
+      </ChartContainer>
+    </section>
+  );
+}
+
+function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDay[]; projects: StudyProject[]; today: string }) {
   const [projectFilter, setProjectFilter] = useState("all");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const filteredRecords = records.filter((record) => (
-    projectFilter === "all"
-      || (projectFilter === "none" ? record.project_id === null : record.project_id === Number(projectFilter))
-  ));
-  const totals = filteredRecords.reduce<Record<string, { score: number; count: number }>>((result, record) => {
-    const current = result[record.study_date] || { score: 0, count: 0 };
-    result[record.study_date] = { score: current.score + record.intensity_score, count: current.count + 1 };
-    return result;
-  }, {});
+  const [heatmap, setHeatmap] = useState(initialDays);
+  const [selectedRecords, setSelectedRecords] = useState<StudyRecord[]>([]);
+  const [selectedTotal, setSelectedTotal] = useState(0);
+  const [selectedAverage, setSelectedAverage] = useState(0);
+  const [loadingDay, setLoadingDay] = useState(false);
+  const displayedHeatmap = projectFilter === "all" ? initialDays : heatmap;
+  const totals = new Map(displayedHeatmap.map((day) => [day.date, day]));
   const end = new Date(`${today}T00:00:00Z`);
   const weekday = end.getUTCDay();
   const mondayDistance = weekday === 0 ? 6 : weekday - 1;
@@ -373,23 +432,49 @@ function StudyHeatmap({ records, projects, today }: { records: StudyRecord[]; pr
     const date = new Date(start);
     date.setUTCDate(start.getUTCDate() + index);
     const key = date.toISOString().slice(0, 10);
-    const total = totals[key];
-    const score = total ? total.score / total.count : 0;
+    const total = totals.get(key);
+    const score = total ? total.average_intensity : 0;
     const future = key > today;
     const level = future ? -1 : Math.round(score);
-    return { key, score, level, future };
+    return { key, score, count: total?.count || 0, level, future };
   });
   const visibleDays = days.filter((day) => !day.future);
   const activeDays = visibleDays.filter((day) => day.score > 0).length;
-  const startKey = start.toISOString().slice(0, 10);
-  const visibleRecords = filteredRecords.filter((record) => record.study_date >= startKey && record.study_date <= today);
-  const averageScore = visibleRecords.length
-    ? visibleRecords.reduce((sum, record) => sum + record.intensity_score, 0) / visibleRecords.length
+  const visibleCount = displayedHeatmap.reduce((sum, day) => sum + day.count, 0);
+  const averageScore = visibleCount
+    ? displayedHeatmap.reduce((sum, day) => sum + day.average_intensity * day.count, 0) / visibleCount
     : 0;
 
-  const selectedRecords = selectedDate
-    ? filteredRecords.filter((record) => record.study_date === selectedDate)
-    : [];
+  async function changeProject(value: string) {
+    setProjectFilter(value);
+    setSelectedDate(null);
+    if (value === "all") return;
+    try {
+      const result = await requestJson(`/api/analytics?project_id=${encodeURIComponent(value)}`, { method: "GET" });
+      setHeatmap(result.heatmap || []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "热度数据加载失败。");
+    }
+  }
+
+  async function openDay(date: string) {
+    setSelectedDate(date);
+    setSelectedRecords([]);
+    setSelectedTotal(0);
+    setSelectedAverage(0);
+    setLoadingDay(true);
+    try {
+      const project = projectFilter === "all" ? "" : `&project_id=${encodeURIComponent(projectFilter)}`;
+      const result = await requestJson(`/api/records?date=${date}&limit=100${project}`, { method: "GET" });
+      setSelectedRecords(result.records || []);
+      setSelectedTotal(result.total || 0);
+      setSelectedAverage(result.average_intensity || 0);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "当天记录加载失败。");
+    } finally {
+      setLoadingDay(false);
+    }
+  }
 
   return (
     <section className="heatmap-card" aria-labelledby="heatmap-title">
@@ -401,10 +486,7 @@ function StudyHeatmap({ records, projects, today }: { records: StudyRecord[]; pr
         <div className="heatmap-summary">
           <Select
             value={projectFilter}
-            onValueChange={(value) => {
-              setProjectFilter(value);
-              setSelectedDate(null);
-            }}
+            onValueChange={changeProject}
           >
             <SelectTrigger className="heatmap-project-filter" aria-label="按项目筛选热度"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -426,9 +508,9 @@ function StudyHeatmap({ records, projects, today }: { records: StudyRecord[]; pr
                 type="button"
                 disabled={day.future}
                 className={`heat-cell level-${day.level} ${selectedDate === day.key ? "selected" : ""}`}
-                onClick={() => setSelectedDate(day.key)}
-                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.score ? `平均强度 ${day.score.toFixed(1)}` : "无记录"}`}
-                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.score ? `平均强度 ${day.score.toFixed(1)}` : "无学习记录"}`}
+                onClick={() => openDay(day.key)}
+                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，平均强度 ${day.score.toFixed(1)}` : "无记录"}`}
+                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，平均强度 ${day.score.toFixed(1)}` : "无学习记录"}`}
               />
             ))}
           </div>
@@ -441,12 +523,14 @@ function StudyHeatmap({ records, projects, today }: { records: StudyRecord[]; pr
             <p className="section-kicker">DAY REVIEW</p>
             <DialogTitle>{selectedDate ? formatStudyDate(selectedDate) : "当天记录"}</DialogTitle>
             <DialogDescription>
-              {selectedRecords.length
-                ? `${selectedRecords.length} 条学习记录 · 平均强度 ${(selectedRecords.reduce((sum, record) => sum + record.intensity_score, 0) / selectedRecords.length).toFixed(1)}`
+              {loadingDay
+                ? "正在读取当天记录…"
+                : selectedRecords.length
+                ? `${selectedTotal} 条学习记录 · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
                 : "这一天还没有学习记录。"}
             </DialogDescription>
           </DialogHeader>
-          {selectedRecords.length ? (
+          {loadingDay ? <div className="heatmap-day-empty"><p>加载中…</p></div> : selectedRecords.length ? (
             <div className="heatmap-day-list">
               {selectedRecords.map((record) => {
                 const project = projects.find((item) => item.id === record.project_id);
@@ -664,13 +748,11 @@ function DeleteProject({ project, onDeleted }: { project: StudyProject; onDelete
 
 function ProjectBoard({
   projects,
-  records,
   onSaved,
   onDeleted,
   onView,
 }: {
   projects: StudyProject[];
-  records: StudyRecord[];
   onSaved: (project: StudyProject) => void;
   onDeleted: (id: number) => void;
   onView: (id: number) => void;
@@ -689,10 +771,8 @@ function ProjectBoard({
   return (
     <div className="project-grid">
       {projects.map((project) => {
-        const projectRecords = records.filter((record) => record.project_id === project.id);
-        const average = projectRecords.length
-          ? projectRecords.reduce((sum, record) => sum + record.intensity_score, 0) / projectRecords.length
-          : 0;
+        const recordCount = Number(project.record_count || 0);
+        const average = Number(project.average_intensity || 0);
         return (
           <article className={`project-card project-${project.color}`} key={project.id}>
             <div className="project-card-top">
@@ -712,7 +792,7 @@ function ProjectBoard({
               <div className="project-dates"><CalendarRange /><span>{project.start_date ? `开始 ${project.start_date}` : "未设开始日期"}</span><i /> <span>{project.target_date ? `计划 ${project.target_date}` : "未设完成日期"}</span></div>
             ) : null}
             <div className="project-stats">
-              <span><strong>{projectRecords.length}</strong> 条记录</span>
+              <span><strong>{recordCount}</strong> 条记录</span>
               <span><strong>{average ? average.toFixed(1) : "—"}</strong> 平均强度</span>
             </div>
             <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
@@ -723,22 +803,51 @@ function ProjectBoard({
   );
 }
 
-export function StudyDashboard({ initialRecords, initialProjects, today, user, loadError }: DashboardProps) {
+export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnalytics, initialProjects, today, user, loadError }: DashboardProps) {
   const [records, setRecords] = useState(initialRecords);
   const [projects, setProjects] = useState(initialProjects);
+  const [analytics, setAnalytics] = useState(initialAnalytics);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
-  const weekStart = weekStartString(today);
+  const [historyRecords, setHistoryRecords] = useState(initialRecords);
+  const [historyTotal, setHistoryTotal] = useState(initialRecordTotal);
+  const [historyAverage, setHistoryAverage] = useState(initialAnalytics.overall_average);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
+
+  const refreshAnalytics = useCallback(async () => {
+    try {
+      const result = await requestJson("/api/analytics", { method: "GET" });
+      if (result.analytics) setAnalytics(result.analytics);
+    } catch {
+      // Keep the last complete snapshot when a background refresh fails.
+    }
+  }, []);
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      const result = await requestJson("/api/projects", { method: "GET" });
+      if (result.projects) setProjects(result.projects);
+    } catch {
+      // Project counts will refresh on the next successful request.
+    }
+  }, []);
 
   const saveRecord = useCallback((record: StudyRecord) => {
     setRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]
       .sort((a, b) => b.study_date.localeCompare(a.study_date) || b.created_at.localeCompare(a.created_at)));
-  }, []);
+    setHistoryRevision((current) => current + 1);
+    void refreshAnalytics();
+    void refreshProjects();
+  }, [refreshAnalytics, refreshProjects]);
 
   const deleteRecord = useCallback((id: number) => {
     setRecords((current) => current.filter((item) => item.id !== id));
-  }, []);
+    setHistoryRevision((current) => current + 1);
+    void refreshAnalytics();
+    void refreshProjects();
+  }, [refreshAnalytics, refreshProjects]);
 
   const saveProject = useCallback((project: StudyProject) => {
     setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
@@ -748,12 +857,55 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
     setProjects((current) => current.filter((item) => item.id !== id));
     setRecords((current) => current.map((record) => record.project_id === id ? { ...record, project_id: null } : record));
     setProjectFilter((current) => current === String(id) ? "all" : current);
+    setHistoryRevision((current) => current + 1);
   }, []);
 
   const viewProject = useCallback((id: number) => {
     setProjectFilter(String(id));
     setView("history");
   }, []);
+
+  useEffect(() => {
+    if (view !== "history") return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setHistoryLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: "50", offset: "0" });
+        if (query.trim()) params.set("q", query.trim());
+        if (projectFilter !== "all") params.set("project_id", projectFilter);
+        const result = await requestJson(`/api/records?${params}`, { method: "GET", signal: controller.signal });
+        setHistoryRecords(result.records || []);
+        setHistoryTotal(result.total || 0);
+        setHistoryAverage(result.average_intensity || 0);
+      } catch (error) {
+        if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "历史记录加载失败。");
+      } finally {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      }
+    }, query ? 250 : 0);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [historyRevision, projectFilter, query, view]);
+
+  async function loadMoreHistory() {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "50", offset: String(historyRecords.length) });
+      if (query.trim()) params.set("q", query.trim());
+      if (projectFilter !== "all") params.set("project_id", projectFilter);
+      const result = await requestJson(`/api/records?${params}`, { method: "GET" });
+      setHistoryRecords((current) => [...current, ...(result.records || [])]);
+      setHistoryTotal(result.total || 0);
+      setHistoryAverage(result.average_intensity || 0);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更多记录加载失败。");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   useEffect(() => {
     const context = document.modelContext;
@@ -830,19 +982,6 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
     return () => lifecycle.abort();
   }, [saveProject, saveRecord]);
 
-  const todayRecords = useMemo(() => records.filter((record) => record.study_date === today), [records, today]);
-  const weekRecords = useMemo(
-    () => records.filter((record) => record.study_date >= weekStart && record.study_date <= today),
-    [records, today, weekStart],
-  );
-  const todayIntensity = todayRecords.length ? todayRecords.reduce((sum, record) => sum + record.intensity_score, 0) / todayRecords.length : 0;
-  const weekIntensity = weekRecords.length ? weekRecords.reduce((sum, record) => sum + record.intensity_score, 0) / weekRecords.length : 0;
-  const filteredRecords = records.filter((record) => {
-    const needle = query.trim().toLowerCase();
-    const project = projects.find((item) => item.id === record.project_id);
-    const matchesProject = projectFilter === "all" || (projectFilter === "none" ? record.project_id === null : record.project_id === Number(projectFilter));
-    return matchesProject && (!needle || `${record.subject} ${record.note} ${project?.name || ""}`.toLowerCase().includes(needle));
-  });
   const firstName = user.displayName.includes("@") ? "同学" : user.displayName.split(/\s+/)[0];
 
   return (
@@ -859,9 +998,9 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
         </TabsList>
         <div className="sidebar-note">
           <span>本周平均强度</span>
-          <strong>{weekIntensity ? `${weekIntensity.toFixed(1)} / 5` : "尚无记录"}</strong>
-          <Progress value={weekIntensity * 20} />
-          <small>{weekRecords.length} 次学习记录</small>
+          <strong>{analytics.week_average ? `${analytics.week_average.toFixed(1)} / 5` : "尚无记录"}</strong>
+          <Progress value={analytics.week_average * 20} />
+          <small>{analytics.week_count} 次学习记录</small>
         </div>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
@@ -882,16 +1021,18 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
           {loadError ? <p className="data-error">{loadError}</p> : null}
           <section className="stats-grid" aria-label="学习统计">
             <article className="focus-card">
-              <div className="focus-copy"><span>今日学习强度</span><strong>{todayIntensity ? todayIntensity.toFixed(1) : "—"}<small>/ 5</small></strong></div>
-              <div className="focus-ring" style={{ "--progress": `${todayIntensity * 72}deg` } as React.CSSProperties}>
-                <span>{todayRecords.length ? `${todayRecords.length} 次` : "待记录"}</span>
+              <div className="focus-copy"><span>今日学习强度</span><strong>{analytics.today_average ? analytics.today_average.toFixed(1) : "—"}<small>/ 5</small></strong></div>
+              <div className="focus-ring" style={{ "--progress": `${analytics.today_average * 72}deg` } as React.CSSProperties}>
+                <span>{analytics.today_count ? `${analytics.today_count} 次` : "待记录"}</span>
               </div>
-              <div className="focus-progress"><Progress value={todayIntensity * 20} /><p>{todayRecords.length ? "根据今日所有记录计算平均强度" : "添加记录后即可看见今日强度"}</p></div>
+              <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? "根据今日所有记录计算平均强度" : "添加记录后即可看见今日强度"}</p></div>
             </article>
-            <article className="stat-card"><span>本周平均强度</span><strong>{weekIntensity ? weekIntensity.toFixed(1) : "—"}</strong><small>/ 5</small><p>从周一到今天</p></article>
-            <article className="stat-card"><span>本周记录</span><strong>{weekRecords.length}</strong><small>次</small><p>{weekRecords.length ? "正在稳步积累" : "等待第一条记录"}</p></article>
+            <article className="stat-card streak-card"><span><Flame />连续学习</span><strong>{analytics.current_streak}</strong><small>天</small><p>最长连续 {analytics.longest_streak} 天</p></article>
+            <article className="stat-card"><span>本周平均强度</span><strong>{analytics.week_average ? analytics.week_average.toFixed(1) : "—"}</strong><small>/ 5</small><p>{analytics.week_count} 次学习记录</p></article>
+            <article className="stat-card"><span>累计记录</span><strong>{analytics.total_records}</strong><small>条</small><p>{analytics.total_active_days} 个学习日</p></article>
           </section>
-          <StudyHeatmap records={records} projects={projects} today={today} />
+          <StudyTrend analytics={analytics} />
+          <StudyHeatmap initialDays={analytics.heatmap} projects={projects} today={today} />
           <section className="records-section">
             <div className="section-heading">
               <div><p className="section-kicker">RECENT</p><h2>最近记录</h2></div>
@@ -903,11 +1044,11 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {records.length} 条学习记录 · 平均强度 {records.length ? (records.reduce((sum, item) => sum + item.intensity_score, 0) / records.length).toFixed(1) : "—"}</p></div>
+            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {historyTotal} 条学习记录 · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p></div>
             <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
           </header>
           <div className="history-filters">
-            <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索学习记录" />{query ? <span>{filteredRecords.length} 条结果</span> : null}</div>
+            <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索学习记录" />{query ? <span>{historyTotal} 条结果</span> : null}</div>
             <Select value={projectFilter} onValueChange={setProjectFilter}>
               <SelectTrigger className="history-project-filter"><SelectValue placeholder="全部项目" /></SelectTrigger>
               <SelectContent>
@@ -918,7 +1059,8 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
             </Select>
           </div>
           <section className="records-section history-records">
-            <RecordList records={filteredRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />
+            {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
+            {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
           </section>
         </TabsContent>
 
@@ -927,7 +1069,7 @@ export function StudyDashboard({ initialRecords, initialProjects, today, user, l
             <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1><p className="page-description">用项目整理长期目标、课程和正在推进的作品。</p></div>
             <ProjectEditor onSaved={saveProject} />
           </header>
-          <ProjectBoard projects={projects} records={records} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} />
+          <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} />
         </TabsContent>
       </main>
 

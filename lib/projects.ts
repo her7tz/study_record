@@ -23,10 +23,14 @@ export function validateProject(input: StudyProjectInput) {
 export async function listProjects(userId: string) {
   const result = await database()
     .prepare(
-      `SELECT id, user_id, name, description, goal, status, start_date, target_date, color, created_at, updated_at
-       FROM projects
-       WHERE user_id = ?
-       ORDER BY updated_at DESC, id DESC`,
+      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color,
+              COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
+              p.created_at, p.updated_at
+       FROM projects p
+       LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
+       WHERE p.user_id = ?
+       GROUP BY p.id
+       ORDER BY p.updated_at DESC, p.id DESC`,
     )
     .bind(userId)
     .all<StudyProject>();
@@ -34,18 +38,20 @@ export async function listProjects(userId: string) {
 }
 
 export async function insertProject(userId: string, input: StudyProjectInput) {
-  return database()
+  const project = await database()
     .prepare(
       `INSERT INTO projects (user_id, name, description, goal, status, start_date, target_date, color)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, created_at, updated_at`,
     )
     .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color)
-    .first<StudyProject>();
+    .first<Omit<StudyProject, "record_count" | "average_intensity">>();
+  return project ? { ...project, record_count: 0, average_intensity: null } : null;
 }
 
 export async function editProject(userId: string, id: number, input: StudyProjectInput) {
-  return database()
+  const db = database();
+  const updated = await db
     .prepare(
       `UPDATE projects
        SET name = ?, description = ?, goal = ?, status = ?, start_date = ?, target_date = ?, color = ?, updated_at = CURRENT_TIMESTAMP
@@ -53,7 +59,17 @@ export async function editProject(userId: string, id: number, input: StudyProjec
        RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, created_at, updated_at`,
     )
     .bind(input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, id, userId)
-    .first<StudyProject>();
+    .first<{ id: number }>();
+  if (!updated) return null;
+  return db.prepare(
+    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color,
+            COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
+            p.created_at, p.updated_at
+     FROM projects p
+     LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
+     WHERE p.id = ? AND p.user_id = ?
+     GROUP BY p.id`,
+  ).bind(id, userId).first<StudyProject>();
 }
 
 export async function removeProject(userId: string, id: number) {

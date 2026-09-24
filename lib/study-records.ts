@@ -20,6 +20,20 @@ export type StudyRecordInput = {
   note: string;
 };
 
+export type StudyRecordPage = {
+  records: StudyRecord[];
+  total: number;
+  average_intensity: number;
+};
+
+export type StudyRecordQuery = {
+  limit?: number;
+  offset?: number;
+  query?: string;
+  projectId?: number | null;
+  date?: string;
+};
+
 function database() {
   if (!env.DB) throw new Error("学习记录数据库暂时不可用。");
   return env.DB;
@@ -38,18 +52,51 @@ export function validateRecord(input: StudyRecordInput) {
   return null;
 }
 
-export async function listRecords(userId: string) {
-  const result = await database()
-    .prepare(
-      `SELECT id, user_id, study_date, subject, project_id, intensity_score, note, created_at, updated_at
-       FROM study_records
-       WHERE user_id = ?
-       ORDER BY study_date DESC, created_at DESC
-       LIMIT 200`,
-    )
-    .bind(userId)
-    .all<StudyRecord>();
-  return result.results;
+export async function listRecords(userId: string, options: StudyRecordQuery = {}): Promise<StudyRecordPage> {
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
+  const conditions = ["r.user_id = ?"];
+  const bindings: Array<string | number> = [userId];
+
+  if (options.date) {
+    conditions.push("r.study_date = ?");
+    bindings.push(options.date);
+  }
+  if (options.projectId === null) {
+    conditions.push("r.project_id IS NULL");
+  } else if (typeof options.projectId === "number") {
+    conditions.push("r.project_id = ?");
+    bindings.push(options.projectId);
+  }
+  if (options.query) {
+    conditions.push("LOWER(r.subject || ' ' || r.note || ' ' || COALESCE(p.name, '')) LIKE ?");
+    bindings.push(`%${options.query.toLowerCase()}%`);
+  }
+
+  const where = conditions.join(" AND ");
+  const db = database();
+  const [recordsResult, summary] = await Promise.all([
+    db.prepare(
+      `SELECT r.id, r.user_id, r.study_date, r.subject, r.project_id, r.intensity_score, r.note, r.created_at, r.updated_at
+       FROM study_records r
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+       WHERE ${where}
+       ORDER BY r.study_date DESC, r.created_at DESC
+       LIMIT ? OFFSET ?`,
+    ).bind(...bindings, limit, offset).all<StudyRecord>(),
+    db.prepare(
+      `SELECT COUNT(*) AS total, COALESCE(AVG(r.intensity_score), 0) AS average_intensity
+       FROM study_records r
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+       WHERE ${where}`,
+    ).bind(...bindings).first<{ total: number; average_intensity: number }>(),
+  ]);
+
+  return {
+    records: recordsResult.results,
+    total: Number(summary?.total || 0),
+    average_intensity: Number(summary?.average_intensity || 0),
+  };
 }
 
 export async function insertRecord(userId: string, input: StudyRecordInput) {
