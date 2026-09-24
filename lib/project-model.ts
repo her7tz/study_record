@@ -16,6 +16,7 @@ export type StudyProject = {
   color: ProjectColor;
   record_count: number;
   average_intensity: number | null;
+  total_intensity: number;
   created_at: string;
   updated_at: string;
 };

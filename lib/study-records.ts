@@ -24,6 +24,7 @@ export type StudyRecordPage = {
   records: StudyRecord[];
   total: number;
   average_intensity: number;
+  total_intensity: number;
 };
 
 export type StudyRecordQuery = {
@@ -85,17 +86,19 @@ export async function listRecords(userId: string, options: StudyRecordQuery = {}
        LIMIT ? OFFSET ?`,
     ).bind(...bindings, limit, offset).all<StudyRecord>(),
     db.prepare(
-      `SELECT COUNT(*) AS total, COALESCE(AVG(r.intensity_score), 0) AS average_intensity
+      `SELECT COUNT(*) AS total, COALESCE(AVG(r.intensity_score), 0) AS average_intensity,
+              COALESCE(SUM(r.intensity_score), 0) AS total_intensity
        FROM study_records r
        LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
        WHERE ${where}`,
-    ).bind(...bindings).first<{ total: number; average_intensity: number }>(),
+    ).bind(...bindings).first<{ total: number; average_intensity: number; total_intensity: number }>(),
   ]);
 
   return {
     records: recordsResult.results,
     total: Number(summary?.total || 0),
     average_intensity: Number(summary?.average_intensity || 0),
+    total_intensity: Number(summary?.total_intensity || 0),
   };
 }
 

@@ -102,7 +102,7 @@ const statusLabels: Record<ProjectStatus, string> = {
   completed: "已完成",
 };
 const trendConfig = {
-  average_intensity: { label: "平均强度", color: "#2254d1" },
+  total_intensity: { label: "累计强度", color: "#2254d1" },
 } satisfies ChartConfig;
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
@@ -125,6 +125,7 @@ async function requestJson(url: string, init: RequestInit) {
     records?: StudyRecord[];
     total?: number;
     average_intensity?: number;
+    total_intensity?: number;
     analytics?: StudyAnalytics;
     heatmap?: HeatmapDay[];
   };
@@ -231,7 +232,7 @@ function RecordEditor({
             </Select>
           </div>
           <div className="form-row">
-            <div className="label-line"><Label>学习强度</Label><span>{values.intensity_score} / 5</span></div>
+            <div className="label-line"><Label>学习强度</Label><span>{values.intensity_score} / 5 · 可按记录累加</span></div>
             <div className="intensity-choices" aria-label="学习强度分数">
               {intensityChoices.map((score) => (
                 <button
@@ -341,7 +342,7 @@ function RecordList({
         <section className="record-group" key={date}>
           <div className="date-heading">
             <h3>{formatStudyDate(date)}</h3>
-            <span>平均强度 {(items.reduce((sum, item) => sum + item.intensity_score, 0) / items.length).toFixed(1)}</span>
+            <span>累计强度 {items.reduce((sum, item) => sum + item.intensity_score, 0)}</span>
           </div>
           <div className="record-stack">
             {items.map((record) => (
@@ -376,37 +377,34 @@ function StudyTrend({ analytics }: { analytics: StudyAnalytics }) {
   const activeDays = analytics.trend.filter((day) => day.count > 0).length;
   const recent = analytics.trend.slice(-7);
   const previous = analytics.trend.slice(0, 7);
-  const average = (days: StudyAnalytics["trend"]) => {
-    const learned = days.filter((day) => day.count > 0);
-    return learned.length ? learned.reduce((sum, day) => sum + day.average_intensity, 0) / learned.length : 0;
-  };
-  const change = average(recent) - average(previous);
+  const total = (days: StudyAnalytics["trend"]) => days.reduce((sum, day) => sum + day.total_intensity, 0);
+  const change = total(recent) - total(previous);
 
   return (
     <section className="trend-card" aria-labelledby="trend-title">
       <div className="trend-heading">
-        <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天趋势</h2></div>
+        <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天累计强度</h2></div>
         <div className="trend-summary">
           <span><strong>{activeDays}</strong> 个学习日</span>
-          <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change.toFixed(1)} 较前 7 天</span>
+          <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change} 较前 7 天</span>
         </div>
       </div>
       <ChartContainer config={trendConfig} className="trend-chart" initialDimension={{ width: 760, height: 220 }}>
         <AreaChart data={analytics.trend} margin={{ top: 12, right: 10, left: -22, bottom: 0 }}>
           <defs>
             <linearGradient id="intensity-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-average_intensity)" stopOpacity={0.32} />
-              <stop offset="100%" stopColor="var(--color-average_intensity)" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="var(--color-total_intensity)" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="var(--color-total_intensity)" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 5" />
           <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
-          <YAxis domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} tickLine={false} axisLine={false} width={28} />
+          <YAxis domain={[0, "auto"]} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
           <ChartTooltip
             cursor={{ stroke: "#9db4f0", strokeDasharray: "3 3" }}
-            content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">平均强度 {Number(value).toFixed(1)} / 5</span>} />}
+            content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">累计强度 {Number(value)}</span>} />}
           />
-          <Area type="monotone" dataKey="average_intensity" stroke="var(--color-average_intensity)" strokeWidth={2.5} fill="url(#intensity-fill)" activeDot={{ r: 5 }} />
+          <Area type="monotone" dataKey="total_intensity" stroke="var(--color-total_intensity)" strokeWidth={2.5} fill="url(#intensity-fill)" activeDot={{ r: 5 }} />
         </AreaChart>
       </ChartContainer>
     </section>
@@ -420,6 +418,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
   const [selectedRecords, setSelectedRecords] = useState<StudyRecord[]>([]);
   const [selectedTotal, setSelectedTotal] = useState(0);
   const [selectedAverage, setSelectedAverage] = useState(0);
+  const [selectedTotalIntensity, setSelectedTotalIntensity] = useState(0);
   const [loadingDay, setLoadingDay] = useState(false);
   const displayedHeatmap = projectFilter === "all" ? initialDays : heatmap;
   const totals = new Map(displayedHeatmap.map((day) => [day.date, day]));
@@ -433,17 +432,14 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
     date.setUTCDate(start.getUTCDate() + index);
     const key = date.toISOString().slice(0, 10);
     const total = totals.get(key);
-    const score = total ? total.average_intensity : 0;
+    const score = total ? total.total_intensity : 0;
     const future = key > today;
-    const level = future ? -1 : Math.round(score);
+    const level = future ? -1 : score === 0 ? 0 : score <= 2 ? 1 : score <= 5 ? 2 : score <= 9 ? 3 : score <= 14 ? 4 : 5;
     return { key, score, count: total?.count || 0, level, future };
   });
   const visibleDays = days.filter((day) => !day.future);
   const activeDays = visibleDays.filter((day) => day.score > 0).length;
-  const visibleCount = displayedHeatmap.reduce((sum, day) => sum + day.count, 0);
-  const averageScore = visibleCount
-    ? displayedHeatmap.reduce((sum, day) => sum + day.average_intensity * day.count, 0) / visibleCount
-    : 0;
+  const visibleIntensity = displayedHeatmap.reduce((sum, day) => sum + day.total_intensity, 0);
 
   async function changeProject(value: string) {
     setProjectFilter(value);
@@ -462,6 +458,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
     setSelectedRecords([]);
     setSelectedTotal(0);
     setSelectedAverage(0);
+    setSelectedTotalIntensity(0);
     setLoadingDay(true);
     try {
       const project = projectFilter === "all" ? "" : `&project_id=${encodeURIComponent(projectFilter)}`;
@@ -469,6 +466,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
       setSelectedRecords(result.records || []);
       setSelectedTotal(result.total || 0);
       setSelectedAverage(result.average_intensity || 0);
+      setSelectedTotalIntensity(result.total_intensity || 0);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "当天记录加载失败。");
     } finally {
@@ -495,7 +493,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
               {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <p><strong>{activeDays}</strong> 个活跃日 · 平均强度 {averageScore.toFixed(1)}</p>
+          <p><strong>{activeDays}</strong> 个活跃日 · 累计强度 {visibleIntensity}</p>
         </div>
       </div>
       <div className="heatmap-scroll">
@@ -509,8 +507,8 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
                 disabled={day.future}
                 className={`heat-cell level-${day.level} ${selectedDate === day.key ? "selected" : ""}`}
                 onClick={() => openDay(day.key)}
-                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，平均强度 ${day.score.toFixed(1)}` : "无记录"}`}
-                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，平均强度 ${day.score.toFixed(1)}` : "无学习记录"}`}
+                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，累计强度 ${day.score}` : "无记录"}`}
+                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，累计强度 ${day.score}` : "无学习记录"}`}
               />
             ))}
           </div>
@@ -526,7 +524,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
               {loadingDay
                 ? "正在读取当天记录…"
                 : selectedRecords.length
-                ? `${selectedTotal} 条学习记录 · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
+                ? `${selectedTotal} 条学习记录 · 累计强度 ${selectedTotalIntensity} · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
                 : "这一天还没有学习记录。"}
             </DialogDescription>
           </DialogHeader>
@@ -772,7 +770,7 @@ function ProjectBoard({
     <div className="project-grid">
       {projects.map((project) => {
         const recordCount = Number(project.record_count || 0);
-        const average = Number(project.average_intensity || 0);
+        const totalIntensity = Number(project.total_intensity || 0);
         return (
           <article className={`project-card project-${project.color}`} key={project.id}>
             <div className="project-card-top">
@@ -793,7 +791,7 @@ function ProjectBoard({
             ) : null}
             <div className="project-stats">
               <span><strong>{recordCount}</strong> 条记录</span>
-              <span><strong>{average ? average.toFixed(1) : "—"}</strong> 平均强度</span>
+              <span><strong>{totalIntensity}</strong> 累计强度</span>
             </div>
             <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
           </article>
@@ -813,6 +811,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   const [historyRecords, setHistoryRecords] = useState(initialRecords);
   const [historyTotal, setHistoryTotal] = useState(initialRecordTotal);
   const [historyAverage, setHistoryAverage] = useState(initialAnalytics.overall_average);
+  const [historyTotalIntensity, setHistoryTotalIntensity] = useState(initialAnalytics.total_intensity);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
 
@@ -878,6 +877,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
         setHistoryRecords(result.records || []);
         setHistoryTotal(result.total || 0);
         setHistoryAverage(result.average_intensity || 0);
+        setHistoryTotalIntensity(result.total_intensity || 0);
       } catch (error) {
         if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "历史记录加载失败。");
       } finally {
@@ -900,6 +900,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       setHistoryRecords((current) => [...current, ...(result.records || [])]);
       setHistoryTotal(result.total || 0);
       setHistoryAverage(result.average_intensity || 0);
+      setHistoryTotalIntensity(result.total_intensity || 0);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "更多记录加载失败。");
     } finally {
@@ -997,10 +998,10 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
         </TabsList>
         <div className="sidebar-note">
-          <span>本周平均强度</span>
-          <strong>{analytics.week_average ? `${analytics.week_average.toFixed(1)} / 5` : "尚无记录"}</strong>
+          <span>本周累计强度</span>
+          <strong>{analytics.week_intensity || "尚无记录"}</strong>
           <Progress value={analytics.week_average * 20} />
-          <small>{analytics.week_count} 次学习记录</small>
+          <small>{analytics.week_count} 次记录 · 平均 {analytics.week_average ? analytics.week_average.toFixed(1) : "—"} / 5</small>
         </div>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
@@ -1021,15 +1022,15 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           {loadError ? <p className="data-error">{loadError}</p> : null}
           <section className="stats-grid" aria-label="学习统计">
             <article className="focus-card">
-              <div className="focus-copy"><span>今日学习强度</span><strong>{analytics.today_average ? analytics.today_average.toFixed(1) : "—"}<small>/ 5</small></strong></div>
+              <div className="focus-copy"><span>今日累计强度</span><strong>{analytics.today_intensity || "—"}</strong></div>
               <div className="focus-ring" style={{ "--progress": `${analytics.today_average * 72}deg` } as React.CSSProperties}>
                 <span>{analytics.today_count ? `${analytics.today_count} 次` : "待记录"}</span>
               </div>
-              <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? "根据今日所有记录计算平均强度" : "添加记录后即可看见今日强度"}</p></div>
+              <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? `今日平均强度 ${analytics.today_average.toFixed(1)} / 5` : "每条记录的强度会在当天累加"}</p></div>
             </article>
             <article className="stat-card streak-card"><span><Flame />连续学习</span><strong>{analytics.current_streak}</strong><small>天</small><p>最长连续 {analytics.longest_streak} 天</p></article>
-            <article className="stat-card"><span>本周平均强度</span><strong>{analytics.week_average ? analytics.week_average.toFixed(1) : "—"}</strong><small>/ 5</small><p>{analytics.week_count} 次学习记录</p></article>
-            <article className="stat-card"><span>累计记录</span><strong>{analytics.total_records}</strong><small>条</small><p>{analytics.total_active_days} 个学习日</p></article>
+            <article className="stat-card"><span>本周累计强度</span><strong>{analytics.week_intensity}</strong><p>{analytics.week_count} 次记录 · 平均 {analytics.week_average ? analytics.week_average.toFixed(1) : "—"} / 5</p></article>
+            <article className="stat-card"><span>历史累计强度</span><strong>{analytics.total_intensity}</strong><p>{analytics.total_records} 条记录 · {analytics.total_active_days} 个学习日</p></article>
           </section>
           <StudyTrend analytics={analytics} />
           <StudyHeatmap initialDays={analytics.heatmap} projects={projects} today={today} />
@@ -1044,7 +1045,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {historyTotal} 条学习记录 · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p></div>
+            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {historyTotal} 条学习记录 · 累计强度 {historyTotalIntensity} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p></div>
             <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
           </header>
           <div className="history-filters">

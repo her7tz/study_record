@@ -25,6 +25,7 @@ export async function listProjects(userId: string) {
     .prepare(
       `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color,
               COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
+              COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
               p.created_at, p.updated_at
        FROM projects p
        LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
@@ -45,8 +46,8 @@ export async function insertProject(userId: string, input: StudyProjectInput) {
        RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, created_at, updated_at`,
     )
     .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color)
-    .first<Omit<StudyProject, "record_count" | "average_intensity">>();
-  return project ? { ...project, record_count: 0, average_intensity: null } : null;
+    .first<Omit<StudyProject, "record_count" | "average_intensity" | "total_intensity">>();
+  return project ? { ...project, record_count: 0, average_intensity: null, total_intensity: 0 } : null;
 }
 
 export async function editProject(userId: string, id: number, input: StudyProjectInput) {
@@ -64,6 +65,7 @@ export async function editProject(userId: string, id: number, input: StudyProjec
   return db.prepare(
     `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color,
             COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
+            COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
             p.created_at, p.updated_at
      FROM projects p
      LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id

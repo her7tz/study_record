@@ -5,6 +5,7 @@ export type HeatmapDay = {
   date: string;
   count: number;
   average_intensity: number;
+  total_intensity: number;
 };
 
 export type TrendDay = HeatmapDay & {
@@ -14,11 +15,14 @@ export type TrendDay = HeatmapDay & {
 export type StudyAnalytics = {
   total_records: number;
   total_active_days: number;
+  total_intensity: number;
   overall_average: number;
   today_count: number;
   today_average: number;
+  today_intensity: number;
   week_count: number;
   week_average: number;
+  week_intensity: number;
   current_streak: number;
   longest_streak: number;
   trend: TrendDay[];
@@ -78,6 +82,7 @@ function fillTrend(rows: HeatmapDay[], today: string) {
       label: `${value.getUTCMonth() + 1}/${value.getUTCDate()}`,
       count: Number(row?.count || 0),
       average_intensity: Number(row?.average_intensity || 0),
+      total_intensity: Number(row?.total_intensity || 0),
     };
   });
 }
@@ -92,7 +97,8 @@ export async function getHeatmapData(userId: string, today: string, projectId?: 
     bindings.push(projectId);
   }
   const result = await database().prepare(
-    `SELECT study_date AS date, COUNT(*) AS count, AVG(intensity_score) AS average_intensity
+    `SELECT study_date AS date, COUNT(*) AS count, AVG(intensity_score) AS average_intensity,
+            SUM(intensity_score) AS total_intensity
      FROM study_records
      WHERE ${conditions.join(" AND ")}
      GROUP BY study_date
@@ -102,6 +108,7 @@ export async function getHeatmapData(userId: string, today: string, projectId?: 
     date: row.date,
     count: Number(row.count),
     average_intensity: Number(row.average_intensity),
+    total_intensity: Number(row.total_intensity),
   }));
 }
 
@@ -114,14 +121,17 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
       `SELECT
          COUNT(*) AS total_records,
          COUNT(DISTINCT study_date) AS total_active_days,
+         COALESCE(SUM(intensity_score), 0) AS total_intensity,
          COALESCE(AVG(intensity_score), 0) AS overall_average,
          SUM(CASE WHEN study_date = ? THEN 1 ELSE 0 END) AS today_count,
          COALESCE(AVG(CASE WHEN study_date = ? THEN intensity_score END), 0) AS today_average,
+         COALESCE(SUM(CASE WHEN study_date = ? THEN intensity_score ELSE 0 END), 0) AS today_intensity,
          SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN 1 ELSE 0 END) AS week_count,
-         COALESCE(AVG(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score END), 0) AS week_average
+         COALESCE(AVG(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score END), 0) AS week_average,
+         COALESCE(SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score ELSE 0 END), 0) AS week_intensity
        FROM study_records
        WHERE user_id = ?`,
-    ).bind(today, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap">>(),
+    ).bind(today, today, today, weekStart, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap">>(),
     db.prepare(
       `SELECT DISTINCT study_date AS date
        FROM study_records
@@ -129,7 +139,8 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
        ORDER BY study_date`,
     ).bind(userId, today).all<{ date: string }>(),
     db.prepare(
-      `SELECT study_date AS date, COUNT(*) AS count, AVG(intensity_score) AS average_intensity
+      `SELECT study_date AS date, COUNT(*) AS count, AVG(intensity_score) AS average_intensity,
+              SUM(intensity_score) AS total_intensity
        FROM study_records
        WHERE user_id = ? AND study_date >= ? AND study_date <= ?
        GROUP BY study_date
@@ -142,11 +153,14 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
   return {
     total_records: Number(metrics?.total_records || 0),
     total_active_days: Number(metrics?.total_active_days || 0),
+    total_intensity: Number(metrics?.total_intensity || 0),
     overall_average: Number(metrics?.overall_average || 0),
     today_count: Number(metrics?.today_count || 0),
     today_average: Number(metrics?.today_average || 0),
+    today_intensity: Number(metrics?.today_intensity || 0),
     week_count: Number(metrics?.week_count || 0),
     week_average: Number(metrics?.week_average || 0),
+    week_intensity: Number(metrics?.week_intensity || 0),
     current_streak: streaks.current,
     longest_streak: streaks.longest,
     trend: fillTrend(trendRows.results, today),
