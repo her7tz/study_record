@@ -626,111 +626,113 @@ function ProjectEditor({
           <Button className="add-button" size="lg" onClick={begin}><Plus /> 新建项目</Button>
         )}
       </DialogTrigger>
-      <DialogContent className="record-dialog sm:max-w-[600px]">
+      <DialogContent className="record-dialog project-dialog sm:max-w-[600px]">
         <DialogHeader>
           <p className="section-kicker">PROJECT</p>
           <DialogTitle>{project ? "编辑项目" : "建立学习项目"}</DialogTitle>
           <DialogDescription>把同一目标下的学习记录整理在一起。</DialogDescription>
         </DialogHeader>
-        <form className="record-form" onSubmit={submit}>
-          <div className="form-row">
-            <Label htmlFor={`project-name-${project?.id || "new"}`}>项目名称</Label>
-            <Input
-              id={`project-name-${project?.id || "new"}`}
-              value={values.name}
-              maxLength={40}
-              placeholder="例如：生成式软件工程"
-              onChange={(event) => setValues({ ...values, name: event.target.value })}
-              autoFocus
-              required
-            />
-          </div>
-          <div className="form-row">
-            <div className="label-line"><Label htmlFor={`project-description-${project?.id || "new"}`}>项目说明</Label><span>选填</span></div>
-            <Textarea
-              id={`project-description-${project?.id || "new"}`}
-              rows={3}
-              maxLength={240}
-              value={values.description}
-              placeholder="补充课程、作品或学习范围"
-              onChange={(event) => setValues({ ...values, description: event.target.value })}
-            />
-          </div>
-          <div className="form-row">
-            <div className="label-line"><Label htmlFor={`project-goal-${project?.id || "new"}`}>项目目标</Label><span>选填</span></div>
-            <Textarea
-              id={`project-goal-${project?.id || "new"}`}
-              rows={3}
-              maxLength={500}
-              value={values.goal}
-              placeholder="例如：完成一个可发布的学习记录网站"
-              onChange={(event) => setValues({ ...values, goal: event.target.value })}
-            />
-          </div>
-          <div className="form-row">
-            <div className="label-line"><Label>项目重要度</Label><span>{values.importance} / 5</span></div>
-            <div className="importance-choices" aria-label="项目重要度">
-              {intensityChoices.map((score) => (
-                <button
-                  key={score}
-                  type="button"
-                  className={values.importance === score ? "active" : ""}
-                  onClick={() => setValues({ ...values, importance: score })}
-                  aria-label={`重要度 ${score}`}
-                  aria-pressed={values.importance === score}
-                >
-                  <Star /><strong>{score}</strong>
-                </button>
-              ))}
-            </div>
-            <p className="form-hint">记录积分 = 项目重要度 × 学习强度；完成项目可获得同等学分。</p>
-          </div>
-          <div className="project-form-grid">
+        <form className="record-form project-editor-form" onSubmit={submit}>
+          <div className="project-form-scroll">
             <div className="form-row">
-              <Label>项目状态</Label>
-              <Select value={values.status} onValueChange={(status) => setValues({ ...values, status: status as ProjectStatus })}>
-                <SelectTrigger className="project-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {projectStatuses.map((status) => <SelectItem key={status} value={status}>{statusLabels[status]}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="form-row">
-              <div className="label-line"><Label htmlFor={`project-start-${project?.id || "new"}`}>开始日期</Label><span>选填</span></div>
+              <Label htmlFor={`project-name-${project?.id || "new"}`}>项目名称</Label>
               <Input
-                id={`project-start-${project?.id || "new"}`}
-                type="date"
-                value={values.start_date || ""}
-                onChange={(event) => setValues({ ...values, start_date: event.target.value || null })}
+                id={`project-name-${project?.id || "new"}`}
+                value={values.name}
+                maxLength={40}
+                placeholder="例如：生成式软件工程"
+                onChange={(event) => setValues({ ...values, name: event.target.value })}
+                autoFocus
+                required
               />
             </div>
             <div className="form-row">
-              <div className="label-line"><Label htmlFor={`project-target-${project?.id || "new"}`}>计划完成</Label><span>选填</span></div>
-              <Input
-                id={`project-target-${project?.id || "new"}`}
-                type="date"
-                value={values.target_date || ""}
-                min={values.start_date || undefined}
-                onChange={(event) => setValues({ ...values, target_date: event.target.value || null })}
+              <div className="label-line"><Label htmlFor={`project-description-${project?.id || "new"}`}>项目说明</Label><span>选填</span></div>
+              <Textarea
+                id={`project-description-${project?.id || "new"}`}
+                rows={3}
+                maxLength={240}
+                value={values.description}
+                placeholder="补充课程、作品或学习范围"
+                onChange={(event) => setValues({ ...values, description: event.target.value })}
               />
             </div>
-          </div>
-          <div className="form-row">
-            <Label>标识颜色</Label>
-            <div className="color-choices" aria-label="项目颜色">
-              {projectColors.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className={`color-choice project-${color} ${values.color === color ? "active" : ""}`}
-                  onClick={() => setValues({ ...values, color })}
-                  aria-label={colorLabels[color]}
-                  aria-pressed={values.color === color}
-                ><i /></button>
-              ))}
+            <div className="form-row">
+              <div className="label-line"><Label htmlFor={`project-goal-${project?.id || "new"}`}>项目目标</Label><span>选填</span></div>
+              <Textarea
+                id={`project-goal-${project?.id || "new"}`}
+                rows={3}
+                maxLength={500}
+                value={values.goal}
+                placeholder="例如：完成一个可发布的学习记录网站"
+                onChange={(event) => setValues({ ...values, goal: event.target.value })}
+              />
+            </div>
+            <div className="form-row">
+              <div className="label-line"><Label>项目重要度</Label><span>{values.importance} / 5</span></div>
+              <div className="importance-choices" aria-label="项目重要度">
+                {intensityChoices.map((score) => (
+                  <button
+                    key={score}
+                    type="button"
+                    className={values.importance === score ? "active" : ""}
+                    onClick={() => setValues({ ...values, importance: score })}
+                    aria-label={`重要度 ${score}`}
+                    aria-pressed={values.importance === score}
+                  >
+                    <Star /><strong>{score}</strong>
+                  </button>
+                ))}
+              </div>
+              <p className="form-hint">记录积分 = 项目重要度 × 学习强度；完成项目可获得同等学分。</p>
+            </div>
+            <div className="project-form-grid">
+              <div className="form-row">
+                <Label>项目状态</Label>
+                <Select value={values.status} onValueChange={(status) => setValues({ ...values, status: status as ProjectStatus })}>
+                  <SelectTrigger className="project-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {projectStatuses.map((status) => <SelectItem key={status} value={status}>{statusLabels[status]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="form-row">
+                <div className="label-line"><Label htmlFor={`project-start-${project?.id || "new"}`}>开始日期</Label><span>选填</span></div>
+                <Input
+                  id={`project-start-${project?.id || "new"}`}
+                  type="date"
+                  value={values.start_date || ""}
+                  onChange={(event) => setValues({ ...values, start_date: event.target.value || null })}
+                />
+              </div>
+              <div className="form-row">
+                <div className="label-line"><Label htmlFor={`project-target-${project?.id || "new"}`}>计划完成</Label><span>选填</span></div>
+                <Input
+                  id={`project-target-${project?.id || "new"}`}
+                  type="date"
+                  value={values.target_date || ""}
+                  min={values.start_date || undefined}
+                  onChange={(event) => setValues({ ...values, target_date: event.target.value || null })}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <Label>标识颜色</Label>
+              <div className="color-choices" aria-label="项目颜色">
+                {projectColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`color-choice project-${color} ${values.color === color ? "active" : ""}`}
+                    onClick={() => setValues({ ...values, color })}
+                    aria-label={colorLabels[color]}
+                    aria-pressed={values.color === color}
+                  ><i /></button>
+                ))}
+              </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="project-dialog-footer">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>取消</Button>
             <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存项目"}</Button>
           </DialogFooter>
