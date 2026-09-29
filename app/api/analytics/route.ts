@@ -14,10 +14,12 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const rawProject = params.get("project_id");
-    if (rawProject !== null) {
-      const projectId = rawProject === "all" ? undefined : rawProject === "none" ? null : Number(rawProject);
+    const month = params.get("month");
+    if (rawProject !== null || month !== null) {
+      if (month !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return jsonError("请选择有效月份。", 400);
+      const projectId = rawProject === null || rawProject === "all" ? undefined : rawProject === "none" ? null : Number(rawProject);
       if (typeof projectId === "number" && (!Number.isInteger(projectId) || projectId < 1)) return jsonError("请选择有效项目。", 400);
-      return Response.json({ heatmap: await getHeatmapData(user.userId, todayString(), projectId) });
+      return Response.json({ heatmap: await getHeatmapData(user.userId, todayString(), projectId, month || undefined) });
     }
     return Response.json({ analytics: await getStudyAnalytics(user.userId, todayString()) });
   } catch (error) {

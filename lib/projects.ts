@@ -24,7 +24,7 @@ export function validateProject(input: StudyProjectInput) {
 export async function listProjects(userId: string) {
   const result = await database()
     .prepare(
-      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance,
+      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance, p.sort_order,
               COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
               COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
               COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
@@ -33,7 +33,7 @@ export async function listProjects(userId: string) {
        LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
        WHERE p.user_id = ?
        GROUP BY p.id
-       ORDER BY p.updated_at DESC, p.id DESC`,
+       ORDER BY p.sort_order ASC, p.created_at ASC, p.id ASC`,
     )
     .bind(userId)
     .all<StudyProject>();
@@ -41,13 +41,17 @@ export async function listProjects(userId: string) {
 }
 
 export async function insertProject(userId: string, input: StudyProjectInput) {
-  const project = await database()
+  const db = database();
+  const nextOrder = await db.prepare(
+    "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM projects WHERE user_id = ?",
+  ).bind(userId).first<{ next_order: number }>();
+  const project = await db
     .prepare(
-      `INSERT INTO projects (user_id, name, description, goal, status, start_date, target_date, color, importance)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, created_at, updated_at`,
+      `INSERT INTO projects (user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order, created_at, updated_at`,
     )
-    .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance)
+    .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, Number(nextOrder?.next_order || 0))
     .first<Omit<StudyProject, "record_count" | "average_intensity" | "total_intensity" | "total_points">>();
   return project ? { ...project, record_count: 0, average_intensity: null, total_intensity: 0, total_points: 0 } : null;
 }
@@ -59,13 +63,13 @@ export async function editProject(userId: string, id: number, input: StudyProjec
       `UPDATE projects
        SET name = ?, description = ?, goal = ?, status = ?, start_date = ?, target_date = ?, color = ?, importance = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ?
-       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, created_at, updated_at`,
+       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order, created_at, updated_at`,
     )
     .bind(input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, id, userId)
     .first<{ id: number }>();
   if (!updated) return null;
   return db.prepare(
-    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance,
+    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance, p.sort_order,
             COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
             COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
             COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
@@ -75,6 +79,18 @@ export async function editProject(userId: string, id: number, input: StudyProjec
      WHERE p.id = ? AND p.user_id = ?
      GROUP BY p.id`,
   ).bind(id, userId).first<StudyProject>();
+}
+
+export async function reorderProjects(userId: string, projectIds: number[]) {
+  const db = database();
+  const owned = await db.prepare("SELECT id FROM projects WHERE user_id = ? ORDER BY id").bind(userId).all<{ id: number }>();
+  const ownedIds = owned.results.map((project) => Number(project.id)).sort((a, b) => a - b);
+  const requestedIds = [...projectIds].sort((a, b) => a - b);
+  if (ownedIds.length !== requestedIds.length || ownedIds.some((id, index) => id !== requestedIds[index])) return false;
+  await db.batch(projectIds.map((id, index) => db.prepare(
+    "UPDATE projects SET sort_order = ? WHERE id = ? AND user_id = ?",
+  ).bind(index, id, userId)));
+  return true;
 }
 
 export async function removeProject(userId: string, id: number) {

@@ -15,6 +15,7 @@ export type StudyProject = {
   target_date: string | null;
   color: ProjectColor;
   importance: number;
+  sort_order: number;
   record_count: number;
   average_intensity: number | null;
   total_intensity: number;

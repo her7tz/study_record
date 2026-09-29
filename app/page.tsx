@@ -31,6 +31,7 @@ export default async function Home() {
     completed_projects: 0,
     current_streak: 0,
     longest_streak: 0,
+    project_points: [],
     trend: [],
     heatmap: [],
   };

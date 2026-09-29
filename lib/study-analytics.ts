@@ -13,6 +13,14 @@ export type TrendDay = HeatmapDay & {
   label: string;
 };
 
+export type ProjectPointShare = {
+  project_id: number;
+  project_name: string;
+  project_color: string;
+  total_points: number;
+  week_points: number;
+};
+
 export type StudyAnalytics = {
   total_records: number;
   total_active_days: number;
@@ -31,6 +39,7 @@ export type StudyAnalytics = {
   completed_projects: number;
   current_streak: number;
   longest_streak: number;
+  project_points: ProjectPointShare[];
   trend: TrendDay[];
   heatmap: HeatmapDay[];
 };
@@ -46,12 +55,11 @@ function shiftDate(value: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-function heatmapStart(today: string) {
-  const end = new Date(`${today}T00:00:00Z`);
-  const weekday = end.getUTCDay();
-  const mondayDistance = weekday === 0 ? 6 : weekday - 1;
-  end.setUTCDate(end.getUTCDate() - mondayDistance - 11 * 7);
-  return end.toISOString().slice(0, 10);
+function monthRange(month: string, today: string) {
+  const start = `${month}-01`;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  return { start, end: lastDay > today ? today : lastDay };
 }
 
 function calculateStreaks(dates: string[], today: string) {
@@ -94,9 +102,10 @@ function fillTrend(rows: HeatmapDay[], today: string) {
   });
 }
 
-export async function getHeatmapData(userId: string, today: string, projectId?: number | null) {
+export async function getHeatmapData(userId: string, today: string, projectId?: number | null, month = today.slice(0, 7)) {
+  const range = monthRange(month, today);
   const conditions = ["r.user_id = ?", "r.study_date >= ?", "r.study_date <= ?"];
-  const bindings: Array<string | number> = [userId, heatmapStart(today), today];
+  const bindings: Array<string | number> = [userId, range.start, range.end];
   if (projectId === null) {
     conditions.push("r.project_id IS NULL");
   } else if (typeof projectId === "number") {
@@ -126,7 +135,7 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
   const weekStart = weekStartString(today);
   const trendStart = shiftDate(today, -13);
   const db = database();
-  const [metrics, activeDates, trendRows, heatmap, credits] = await Promise.all([
+  const [metrics, activeDates, trendRows, heatmap, credits, projectPoints] = await Promise.all([
     db.prepare(
       `SELECT
          COUNT(*) AS total_records,
@@ -168,6 +177,16 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
        FROM projects
        WHERE user_id = ? AND status = 'completed'`,
     ).bind(userId).first<{ completed_projects: number; total_credits: number }>(),
+    db.prepare(
+      `SELECT p.id AS project_id, p.name AS project_name, p.color AS project_color,
+              COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
+              COALESCE(SUM(CASE WHEN r.study_date >= ? AND r.study_date <= ? THEN r.intensity_score * p.importance ELSE 0 END), 0) AS week_points
+       FROM projects p
+       LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
+       WHERE p.user_id = ?
+       GROUP BY p.id
+       ORDER BY p.sort_order ASC, p.created_at ASC, p.id ASC`,
+    ).bind(weekStart, today, userId).all<ProjectPointShare>(),
   ]);
 
   const streaks = calculateStreaks(activeDates.results.map((row) => row.date), today);
@@ -189,6 +208,12 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
     completed_projects: Number(credits?.completed_projects || 0),
     current_streak: streaks.current,
     longest_streak: streaks.longest,
+    project_points: projectPoints.results.map((project) => ({
+      ...project,
+      project_id: Number(project.project_id),
+      total_points: Number(project.total_points),
+      week_points: Number(project.week_points),
+    })),
     trend: fillTrend(trendRows.results, today),
     heatmap,
   };

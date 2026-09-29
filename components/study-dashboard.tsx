@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   BookOpen,
   CalendarRange,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   Download,
   Flame,
@@ -22,7 +25,7 @@ import {
   TrendingUp,
   Trash2,
 } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -106,6 +109,17 @@ const statusLabels: Record<ProjectStatus, string> = {
 const trendConfig = {
   total_points: { label: "积分", color: "#2254d1" },
 } satisfies ChartConfig;
+const pointDistributionConfig = {
+  points: { label: "积分", color: "#2254d1" },
+} satisfies ChartConfig;
+const projectChartColors: Record<string, string> = {
+  blue: "#2254d1",
+  teal: "#14867f",
+  amber: "#b9780e",
+  violet: "#7051b5",
+  rose: "#bd435d",
+  slate: "#52647e",
+};
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
   return {
@@ -381,46 +395,177 @@ function RecordList({
   );
 }
 
-function StudyTrend({ analytics }: { analytics: StudyAnalytics }) {
+function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projects: StudyProject[] }) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedRecords, setSelectedRecords] = useState<StudyRecord[]>([]);
+  const [loadingSources, setLoadingSources] = useState(false);
   const activeDays = analytics.trend.filter((day) => day.count > 0).length;
   const recent = analytics.trend.slice(-7);
   const previous = analytics.trend.slice(0, 7);
   const total = (days: StudyAnalytics["trend"]) => days.reduce((sum, day) => sum + day.total_points, 0);
   const change = total(recent) - total(previous);
 
+  async function openSources(date: string) {
+    setSelectedDate(date);
+    setLoadingSources(true);
+    try {
+      const result = await requestJson(`/api/records?date=${date}&limit=100`, { method: "GET" });
+      setSelectedRecords(result.records || []);
+    } catch (error) {
+      setSelectedRecords([]);
+      toast.error(error instanceof Error ? error.message : "积分来源加载失败。");
+    } finally {
+      setLoadingSources(false);
+    }
+  }
+
+  function renderTrendDot({ cx, cy, payload }: { cx?: number; cy?: number; payload?: StudyAnalytics["trend"][number] }) {
+    if (cx === undefined || cy === undefined || !payload?.count) return <circle cx={cx} cy={cy} r={0} />;
+
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={5}
+        fill="var(--color-total_points)"
+        stroke="white"
+        strokeWidth={2}
+        className="trend-data-point"
+        role="button"
+        tabIndex={0}
+        aria-label={`${payload.date}，${payload.total_points} 积分，查看积分来源`}
+        onClick={() => void openSources(payload.date)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") void openSources(payload.date);
+        }}
+      />
+    );
+  }
+
   return (
-    <section className="trend-card" aria-labelledby="trend-title">
-      <div className="trend-heading">
-        <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天积分趋势</h2></div>
-        <div className="trend-summary">
-          <span><strong>{activeDays}</strong> 个学习日</span>
-          <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change} 较前 7 天</span>
+    <>
+      <section className="trend-card" aria-labelledby="trend-title">
+        <div className="trend-heading">
+          <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天积分趋势</h2><small>点击数据点查看积分来源</small></div>
+          <div className="trend-summary">
+            <span><strong>{activeDays}</strong> 个学习日</span>
+            <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change} 较前 7 天</span>
+          </div>
         </div>
-      </div>
-      <ChartContainer config={trendConfig} className="trend-chart" initialDimension={{ width: 760, height: 220 }}>
-        <AreaChart data={analytics.trend} margin={{ top: 12, right: 10, left: -22, bottom: 0 }}>
-          <defs>
-            <linearGradient id="intensity-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-total_points)" stopOpacity={0.32} />
-              <stop offset="100%" stopColor="var(--color-total_points)" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid vertical={false} strokeDasharray="3 5" />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
-          <YAxis domain={[0, "auto"]} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
-          <ChartTooltip
-            cursor={{ stroke: "#9db4f0", strokeDasharray: "3 3" }}
-            content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">积分 {Number(value)}</span>} />}
-          />
-          <Area type="monotone" dataKey="total_points" stroke="var(--color-total_points)" strokeWidth={2.5} fill="url(#intensity-fill)" activeDot={{ r: 5 }} />
-        </AreaChart>
-      </ChartContainer>
-    </section>
+        <ChartContainer config={trendConfig} className="trend-chart" initialDimension={{ width: 760, height: 220 }}>
+          <AreaChart data={analytics.trend} margin={{ top: 12, right: 10, left: -22, bottom: 0 }}>
+            <defs>
+              <linearGradient id="intensity-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--color-total_points)" stopOpacity={0.32} />
+                <stop offset="100%" stopColor="var(--color-total_points)" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 5" />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
+            <YAxis domain={[0, "auto"]} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
+            <ChartTooltip
+              cursor={{ stroke: "#9db4f0", strokeDasharray: "3 3" }}
+              content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">积分 {Number(value)}</span>} />}
+            />
+            <Area type="monotone" dataKey="total_points" stroke="var(--color-total_points)" strokeWidth={2.5} fill="url(#intensity-fill)" dot={renderTrendDot} activeDot={false} />
+          </AreaChart>
+        </ChartContainer>
+      </section>
+      <Dialog open={Boolean(selectedDate)} onOpenChange={(open) => !open && setSelectedDate(null)}>
+        <DialogContent className="heatmap-dialog sm:max-w-[520px]">
+          <DialogHeader>
+            <p className="section-kicker">POINT SOURCES</p>
+            <DialogTitle>{selectedDate ? `${formatStudyDate(selectedDate)} · 积分来源` : "积分来源"}</DialogTitle>
+            <DialogDescription>{loadingSources ? "正在读取…" : `${selectedRecords.length} 条学习记录`}</DialogDescription>
+          </DialogHeader>
+          {loadingSources ? <div className="heatmap-day-empty"><p>加载中…</p></div> : selectedRecords.length ? (
+            <div className="heatmap-day-list">
+              {selectedRecords.map((record) => {
+                const project = projects.find((item) => item.id === record.project_id);
+                const points = record.intensity_score * Number(project?.importance || 0);
+                return (
+                  <article key={record.id}>
+                    <div><h3>{record.subject}</h3>{project ? <span className={`project-pill project-${project.color}`}>{project.name}</span> : <span className="day-unclassified">未分类</span>}{record.note ? <p>{record.note}</p> : null}</div>
+                    <strong>{points}<small>积分 · 强度 {record.intensity_score}{project ? ` × 重要度 ${project.importance}` : ""}</small></strong>
+                  </article>
+                );
+              })}
+            </div>
+          ) : <div className="heatmap-day-empty"><p>这一天没有积分来源。</p></div>}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+type PointDistributionScope = "week" | "total";
+
+function PointDistributionDialog({
+  analytics,
+  scope,
+  onClose,
+}: {
+  analytics: StudyAnalytics;
+  scope: PointDistributionScope | null;
+  onClose: () => void;
+}) {
+  const valueKey = scope === "week" ? "week_points" : "total_points";
+  const data = analytics.project_points
+    .map((project) => ({
+      id: project.project_id,
+      name: project.project_name,
+      color: projectChartColors[project.project_color] || projectChartColors.slate,
+      points: Number(project[valueKey] || 0),
+    }))
+    .filter((project) => project.points > 0)
+    .sort((a, b) => b.points - a.points);
+  const total = data.reduce((sum, project) => sum + project.points, 0);
+
+  return (
+    <Dialog open={scope !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="points-dialog sm:max-w-[620px]">
+        <DialogHeader>
+          <p className="section-kicker">DISTRIBUTION</p>
+          <DialogTitle>{scope === "week" ? "本周积分分布" : "累计积分分布"}</DialogTitle>
+          <DialogDescription>按学习项目查看积分构成。</DialogDescription>
+        </DialogHeader>
+        {data.length ? (
+          <div className="points-distribution">
+            <div className="points-chart-wrap">
+              <ChartContainer config={pointDistributionConfig} className="points-chart" initialDimension={{ width: 250, height: 250 }}>
+                <PieChart>
+                  <ChartTooltip
+                    content={<ChartTooltipContent hideLabel formatter={(value, _name, item) => <span className="points-tooltip"><strong>{item.payload?.name}</strong>{Number(value)} 积分</span>} />}
+                  />
+                  <Pie data={data} dataKey="points" nameKey="name" innerRadius={64} outerRadius={96} paddingAngle={2} strokeWidth={0}>
+                    {data.map((project) => <Cell key={project.id} fill={project.color} />)}
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
+              <div className="points-chart-total"><strong>{total}</strong><span>积分</span></div>
+            </div>
+            <div className="points-legend">
+              {data.map((project) => (
+                <div key={project.id}>
+                  <i style={{ background: project.color }} />
+                  <span title={project.name}>{project.name}</span>
+                  <strong>{project.points}</strong>
+                  <small>{Math.round((project.points / total) * 100)}%</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="points-empty"><FolderKanban /><p>该周期还没有归入项目的积分。</p></div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDay[]; projects: StudyProject[]; today: string }) {
   const [projectFilter, setProjectFilter] = useState("all");
+  const [month, setMonth] = useState(today.slice(0, 7));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [heatmap, setHeatmap] = useState(initialDays);
   const [selectedRecords, setSelectedRecords] = useState<StudyRecord[]>([]);
@@ -429,35 +574,49 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
   const [selectedTotalIntensity, setSelectedTotalIntensity] = useState(0);
   const [selectedTotalPoints, setSelectedTotalPoints] = useState(0);
   const [loadingDay, setLoadingDay] = useState(false);
-  const displayedHeatmap = projectFilter === "all" ? initialDays : heatmap;
+  const displayedHeatmap = month === today.slice(0, 7) && projectFilter === "all" ? initialDays : heatmap;
   const totals = new Map(displayedHeatmap.map((day) => [day.date, day]));
-  const end = new Date(`${today}T00:00:00Z`);
-  const weekday = end.getUTCDay();
-  const mondayDistance = weekday === 0 ? 6 : weekday - 1;
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - mondayDistance - 11 * 7);
-  const days = Array.from({ length: 84 }, (_, index) => {
-    const date = new Date(start);
-    date.setUTCDate(start.getUTCDate() + index);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const dayCount = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const firstWeekday = new Date(Date.UTC(year, monthNumber - 1, 1)).getUTCDay();
+  const firstColumn = firstWeekday === 0 ? 7 : firstWeekday;
+  const days = Array.from({ length: dayCount }, (_, index) => {
+    const date = new Date(Date.UTC(year, monthNumber - 1, index + 1));
     const key = date.toISOString().slice(0, 10);
     const total = totals.get(key);
     const score = total ? total.total_intensity : 0;
     const future = key > today;
     const level = future ? -1 : score === 0 ? 0 : score <= 2 ? 1 : score <= 5 ? 2 : score <= 9 ? 3 : score <= 14 ? 4 : 5;
-    return { key, score, count: total?.count || 0, level, future };
+    return { key, day: index + 1, score, count: total?.count || 0, level, future };
   });
   const visibleDays = days.filter((day) => !day.future);
   const activeDays = visibleDays.filter((day) => day.score > 0).length;
   const visibleIntensity = displayedHeatmap.reduce((sum, day) => sum + day.total_intensity, 0);
   const visiblePoints = displayedHeatmap.reduce((sum, day) => sum + day.total_points, 0);
 
+  async function loadHeatmap(nextMonth: string, nextProject: string) {
+    const result = await requestJson(`/api/analytics?month=${encodeURIComponent(nextMonth)}&project_id=${encodeURIComponent(nextProject)}`, { method: "GET" });
+    setHeatmap(result.heatmap || []);
+  }
+
   async function changeProject(value: string) {
     setProjectFilter(value);
     setSelectedDate(null);
-    if (value === "all") return;
     try {
-      const result = await requestJson(`/api/analytics?project_id=${encodeURIComponent(value)}`, { method: "GET" });
-      setHeatmap(result.heatmap || []);
+      if (value === "all" && month === today.slice(0, 7)) return;
+      await loadHeatmap(month, value);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "热度数据加载失败。");
+    }
+  }
+
+  async function changeMonth(offset: -1 | 1) {
+    const value = new Date(Date.UTC(year, monthNumber - 1 + offset, 1)).toISOString().slice(0, 7);
+    setMonth(value);
+    setSelectedDate(null);
+    try {
+      if (value === today.slice(0, 7) && projectFilter === "all") return;
+      await loadHeatmap(value, projectFilter);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "热度数据加载失败。");
     }
@@ -494,6 +653,11 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
           <h2 id="heatmap-title">学习热度</h2>
         </div>
         <div className="heatmap-summary">
+          <div className="heatmap-month-switcher">
+            <button type="button" onClick={() => changeMonth(-1)} aria-label="查看上个月"><ChevronLeft /></button>
+            <strong>{year}年{monthNumber}月</strong>
+            <button type="button" onClick={() => changeMonth(1)} disabled={month >= today.slice(0, 7)} aria-label="查看下个月"><ChevronRight /></button>
+          </div>
           <Select
             value={projectFilter}
             onValueChange={changeProject}
@@ -510,18 +674,18 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
       </div>
       <div className="heatmap-scroll">
         <div className="heatmap-body">
-          <div className="weekday-labels" aria-hidden="true"><span>一</span><span>三</span><span>五</span></div>
-          <div className="heatmap-grid" role="grid" aria-label="近 12 周学习热度">
-            {days.map((day) => (
+          <div className="heatmap-grid" role="grid" aria-label={`${year}年${monthNumber}月学习热度`}>
+            {days.map((day, index) => (
               <button
                 key={day.key}
                 type="button"
                 disabled={day.future}
                 className={`heat-cell level-${day.level} ${selectedDate === day.key ? "selected" : ""}`}
+                style={index === 0 ? { gridColumnStart: firstColumn } : undefined}
                 onClick={() => openDay(day.key)}
                 title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无记录"}`}
                 aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无学习记录"}`}
-              />
+              ><span>{day.day}</span></button>
             ))}
           </div>
         </div>
@@ -782,12 +946,15 @@ function ProjectBoard({
   onSaved,
   onDeleted,
   onView,
+  onReorder,
 }: {
   projects: StudyProject[];
   onSaved: (project: StudyProject) => void;
   onDeleted: (id: number) => void;
   onView: (id: number) => void;
+  onReorder: (projects: StudyProject[]) => void;
 }) {
+  const [sortMode, setSortMode] = useState("manual");
   if (!projects.length) {
     return (
       <div className="empty-state project-empty">
@@ -799,49 +966,93 @@ function ProjectBoard({
     );
   }
 
+  const sortedProjects = [...projects].sort((a, b) => {
+    if (sortMode === "importance") return b.importance - a.importance || b.updated_at.localeCompare(a.updated_at);
+    if (sortMode === "time") return b.updated_at.localeCompare(a.updated_at) || b.id - a.id;
+    return a.sort_order - b.sort_order || a.id - b.id;
+  });
+  const groups = [
+    { key: "unfinished", title: "未完成", projects: sortedProjects.filter((project) => project.status !== "completed") },
+    { key: "completed", title: "已完成", projects: sortedProjects.filter((project) => project.status === "completed") },
+  ];
+
+  function moveProject(project: StudyProject, direction: -1 | 1) {
+    const groupProjects = sortedProjects.filter((item) => (item.status === "completed") === (project.status === "completed"));
+    const currentIndex = groupProjects.findIndex((item) => item.id === project.id);
+    const target = groupProjects[currentIndex + direction];
+    if (!target) return;
+    const reordered = [...sortedProjects];
+    const sourceIndex = reordered.findIndex((item) => item.id === project.id);
+    const targetIndex = reordered.findIndex((item) => item.id === target.id);
+    [reordered[sourceIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[sourceIndex]];
+    onReorder(reordered.map((item, index) => ({ ...item, sort_order: index })));
+  }
+
+  function renderProject(project: StudyProject, index: number, groupLength: number) {
+    const recordCount = Number(project.record_count || 0);
+    const totalIntensity = Number(project.total_intensity || 0);
+    const totalPoints = Number(project.total_points || 0);
+    return (
+      <article className={`project-card project-${project.color}`} key={project.id}>
+        <div className="project-card-top">
+          <div className="project-card-identity">
+            <span className="project-icon"><FolderKanban /></span>
+            <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
+            <span className="project-importance"><Star />重要度 {project.importance}</span>
+          </div>
+          <div className="record-actions">
+            {sortMode === "manual" ? <>
+              <button className="record-action" type="button" disabled={index === 0} onClick={() => moveProject(project, -1)} aria-label={`上移项目 ${project.name}`}><ArrowUp /></button>
+              <button className="record-action" type="button" disabled={index === groupLength - 1} onClick={() => moveProject(project, 1)} aria-label={`下移项目 ${project.name}`}><ArrowDown /></button>
+            </> : null}
+            <ProjectEditor project={project} compact onSaved={onSaved} />
+            <DeleteProject project={project} onDeleted={onDeleted} />
+          </div>
+        </div>
+        <h2>{project.name}</h2>
+        <p>{project.description || "还没有项目说明"}</p>
+        {project.goal ? <div className="project-goal"><Target /><div><span>项目目标</span><p>{project.goal}</p></div></div> : null}
+        {(project.start_date || project.target_date) ? (
+          <div className="project-dates"><CalendarRange /><span>{project.start_date ? `开始 ${project.start_date}` : "未设开始日期"}</span><i /> <span>{project.target_date ? `计划 ${project.target_date}` : "未设完成日期"}</span></div>
+        ) : null}
+        <div className="project-stats">
+          <span><strong>{recordCount}</strong> 条记录</span>
+          <span><strong>{totalIntensity}</strong> 累计强度</span>
+          <span><strong>{totalPoints}</strong> 积分</span>
+        </div>
+        {project.status === "completed" ? <div className="project-credit"><Star />已获得 {project.importance} 学分</div> : null}
+        <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
+      </article>
+    );
+  }
+
   return (
-    <div className="project-grid">
-      {projects.map((project) => {
-        const recordCount = Number(project.record_count || 0);
-        const totalIntensity = Number(project.total_intensity || 0);
-        const totalPoints = Number(project.total_points || 0);
-        return (
-          <article className={`project-card project-${project.color}`} key={project.id}>
-            <div className="project-card-top">
-              <div className="project-card-identity">
-                <span className="project-icon"><FolderKanban /></span>
-                <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
-                <span className="project-importance"><Star />重要度 {project.importance}</span>
-              </div>
-              <div className="record-actions">
-                <ProjectEditor project={project} compact onSaved={onSaved} />
-                <DeleteProject project={project} onDeleted={onDeleted} />
-              </div>
-            </div>
-            <h2>{project.name}</h2>
-            <p>{project.description || "还没有项目说明"}</p>
-            {project.goal ? <div className="project-goal"><Target /><div><span>项目目标</span><p>{project.goal}</p></div></div> : null}
-            {(project.start_date || project.target_date) ? (
-              <div className="project-dates"><CalendarRange /><span>{project.start_date ? `开始 ${project.start_date}` : "未设开始日期"}</span><i /> <span>{project.target_date ? `计划 ${project.target_date}` : "未设完成日期"}</span></div>
-            ) : null}
-            <div className="project-stats">
-              <span><strong>{recordCount}</strong> 条记录</span>
-              <span><strong>{totalIntensity}</strong> 累计强度</span>
-              <span><strong>{totalPoints}</strong> 积分</span>
-            </div>
-            {project.status === "completed" ? <div className="project-credit"><Star />已获得 {project.importance} 学分</div> : null}
-            <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
-          </article>
-        );
-      })}
+    <div className="project-board">
+      <div className="project-toolbar">
+        <div><strong>按完成状态分类</strong><span>每类项目可独立查看和手动排序</span></div>
+        <Select value={sortMode} onValueChange={setSortMode}>
+          <SelectTrigger className="project-sort" aria-label="项目排序方式"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="manual">自主排序</SelectItem>
+            <SelectItem value="time">按时间排序</SelectItem>
+            <SelectItem value="importance">按重要度排序</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {groups.map((group) => group.projects.length ? (
+        <section className="project-group" key={group.key}>
+          <div className="project-group-heading"><h2>{group.title}</h2><span>{group.projects.length} 个项目</span></div>
+          <div className="project-grid">{group.projects.map((project, index) => renderProject(project, index, group.projects.length))}</div>
+        </section>
+      ) : null)}
     </div>
   );
 }
 
 export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnalytics, initialProjects, today, user, loadError }: DashboardProps) {
-  const [records, setRecords] = useState(initialRecords);
   const [projects, setProjects] = useState(initialProjects);
   const [analytics, setAnalytics] = useState(initialAnalytics);
+  const [pointDistribution, setPointDistribution] = useState<PointDistributionScope | null>(null);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -871,34 +1082,48 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
     }
   }, []);
 
-  const saveRecord = useCallback((record: StudyRecord) => {
-    setRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]
-      .sort((a, b) => b.study_date.localeCompare(a.study_date) || b.created_at.localeCompare(a.created_at)));
+  const saveRecord: (record: StudyRecord) => void = useCallback(() => {
     setHistoryRevision((current) => current + 1);
     void refreshAnalytics();
     void refreshProjects();
   }, [refreshAnalytics, refreshProjects]);
 
-  const deleteRecord = useCallback((id: number) => {
-    setRecords((current) => current.filter((item) => item.id !== id));
+  const deleteRecord: (id: number) => void = useCallback(() => {
     setHistoryRevision((current) => current + 1);
     void refreshAnalytics();
     void refreshProjects();
   }, [refreshAnalytics, refreshProjects]);
 
   const saveProject = useCallback((project: StudyProject) => {
-    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+    setProjects((current) => current.some((item) => item.id === project.id)
+      ? current.map((item) => item.id === project.id ? project : item)
+      : [...current, project]);
     setHistoryRevision((current) => current + 1);
     void refreshAnalytics();
   }, [refreshAnalytics]);
 
   const deleteProject = useCallback((id: number) => {
     setProjects((current) => current.filter((item) => item.id !== id));
-    setRecords((current) => current.map((record) => record.project_id === id ? { ...record, project_id: null } : record));
     setProjectFilter((current) => current === String(id) ? "all" : current);
     setHistoryRevision((current) => current + 1);
     void refreshAnalytics();
   }, [refreshAnalytics]);
+
+  const reorderProjectCards = useCallback(async (orderedProjects: StudyProject[]) => {
+    const previous = projects;
+    setProjects(orderedProjects);
+    try {
+      const result = await requestJson("/api/projects", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_ids: orderedProjects.map((project) => project.id) }),
+      });
+      if (result.projects) setProjects(result.projects);
+    } catch (error) {
+      setProjects(previous);
+      toast.error(error instanceof Error ? error.message : "项目排序保存失败，请稍后再试。");
+    }
+  }, [projects]);
 
   const viewProject = useCallback((id: number) => {
     setProjectFilter(String(id));
@@ -1074,19 +1299,13 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
               <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? `今日平均强度 ${analytics.today_average.toFixed(1)} / 5` : "每条记录的强度会在当天累加"}</p></div>
             </article>
             <article className="stat-card streak-card"><span><Flame />连续学习</span><strong>{analytics.current_streak}</strong><small>天</small><p>最长连续 {analytics.longest_streak} 天</p></article>
-            <article className="stat-card"><span>本周积分</span><strong>{analytics.week_points}</strong><p>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</p></article>
-            <article className="stat-card"><span>累计积分</span><strong>{analytics.total_points}</strong><p>累计强度 {analytics.total_intensity} · {analytics.total_records} 条记录</p></article>
+            <button type="button" className="stat-card stat-card-button" onClick={() => setPointDistribution("week")}><span>本周积分</span><strong>{analytics.week_points}</strong><p>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</p><small>点击查看项目分布</small></button>
+            <button type="button" className="stat-card stat-card-button" onClick={() => setPointDistribution("total")}><span>累计积分</span><strong>{analytics.total_points}</strong><p>累计强度 {analytics.total_intensity} · {analytics.total_records} 条记录</p><small>点击查看项目分布</small></button>
             <article className="stat-card credit-card"><span><Star />项目学分</span><strong>{analytics.total_credits}</strong><small>学分</small><p>{analytics.completed_projects} 个已完成项目</p></article>
           </section>
-          <StudyTrend analytics={analytics} />
+          <StudyTrend analytics={analytics} projects={projects} />
           <StudyHeatmap initialDays={analytics.heatmap} projects={projects} today={today} />
-          <section className="records-section">
-            <div className="section-heading">
-              <div><p className="section-kicker">RECENT</p><h2>最近记录</h2></div>
-              <button type="button" onClick={() => setView("history")}>查看全部 <ChevronRight /></button>
-            </div>
-            <RecordList records={records.slice(0, 6)} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />
-          </section>
+          <PointDistributionDialog analytics={analytics} scope={pointDistribution} onClose={() => setPointDistribution(null)} />
         </TabsContent>
 
         <TabsContent value="history" className="view-content">
@@ -1117,10 +1336,10 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="projects" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1><p className="page-description">重要度为 1–5；积分 = 重要度 × 强度，完成项目后获得对应学分。</p></div>
+            <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1></div>
             <ProjectEditor onSaved={saveProject} />
           </header>
-          <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} />
+          <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} onReorder={reorderProjectCards} />
         </TabsContent>
       </main>
 

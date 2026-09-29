@@ -5,6 +5,7 @@ import {
   listProjects,
   projectColors,
   projectStatuses,
+  reorderProjects,
   removeProject,
   validateProject,
   type ProjectColor,
@@ -77,6 +78,23 @@ export async function PATCH(request: Request) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return jsonError("已经有同名项目了。", 409);
     console.error("projects:update", error);
     return jsonError("项目修改失败，请稍后再试。", 503);
+  }
+}
+
+export async function PUT(request: Request) {
+  const user = await getChatGPTUser();
+  if (!user) return jsonError("请先登录。", 401);
+  try {
+    const payload = (await request.json()) as { project_ids?: unknown };
+    const projectIds = Array.isArray(payload.project_ids) ? payload.project_ids.map(Number) : [];
+    if (!projectIds.length || projectIds.some((id) => !Number.isInteger(id) || id < 1) || new Set(projectIds).size !== projectIds.length) {
+      return jsonError("项目排序数据无效。", 400);
+    }
+    if (!(await reorderProjects(user.userId, projectIds))) return jsonError("项目排序与当前项目不一致，请刷新后重试。", 409);
+    return Response.json({ projects: await listProjects(user.userId) });
+  } catch (error) {
+    console.error("projects:reorder", error);
+    return jsonError("项目排序保存失败，请稍后再试。", 503);
   }
 }
 
