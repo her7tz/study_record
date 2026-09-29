@@ -14,9 +14,11 @@ export type StudyProject = {
   start_date: string | null;
   target_date: string | null;
   color: ProjectColor;
+  importance: number;
   record_count: number;
   average_intensity: number | null;
   total_intensity: number;
+  total_points: number;
   created_at: string;
   updated_at: string;
 };
@@ -29,4 +31,5 @@ export type StudyProjectInput = {
   start_date: string | null;
   target_date: string | null;
   color: ProjectColor;
+  importance: number;
 };

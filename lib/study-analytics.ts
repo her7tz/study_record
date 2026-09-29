@@ -6,6 +6,7 @@ export type HeatmapDay = {
   count: number;
   average_intensity: number;
   total_intensity: number;
+  total_points: number;
 };
 
 export type TrendDay = HeatmapDay & {
@@ -16,13 +17,18 @@ export type StudyAnalytics = {
   total_records: number;
   total_active_days: number;
   total_intensity: number;
+  total_points: number;
   overall_average: number;
   today_count: number;
   today_average: number;
   today_intensity: number;
+  today_points: number;
   week_count: number;
   week_average: number;
   week_intensity: number;
+  week_points: number;
+  total_credits: number;
+  completed_projects: number;
   current_streak: number;
   longest_streak: number;
   trend: TrendDay[];
@@ -83,32 +89,36 @@ function fillTrend(rows: HeatmapDay[], today: string) {
       count: Number(row?.count || 0),
       average_intensity: Number(row?.average_intensity || 0),
       total_intensity: Number(row?.total_intensity || 0),
+      total_points: Number(row?.total_points || 0),
     };
   });
 }
 
 export async function getHeatmapData(userId: string, today: string, projectId?: number | null) {
-  const conditions = ["user_id = ?", "study_date >= ?", "study_date <= ?"];
+  const conditions = ["r.user_id = ?", "r.study_date >= ?", "r.study_date <= ?"];
   const bindings: Array<string | number> = [userId, heatmapStart(today), today];
   if (projectId === null) {
-    conditions.push("project_id IS NULL");
+    conditions.push("r.project_id IS NULL");
   } else if (typeof projectId === "number") {
-    conditions.push("project_id = ?");
+    conditions.push("r.project_id = ?");
     bindings.push(projectId);
   }
   const result = await database().prepare(
-    `SELECT study_date AS date, COUNT(*) AS count, AVG(intensity_score) AS average_intensity,
-            SUM(intensity_score) AS total_intensity
-     FROM study_records
+    `SELECT r.study_date AS date, COUNT(*) AS count, AVG(r.intensity_score) AS average_intensity,
+            SUM(r.intensity_score) AS total_intensity,
+            SUM(COALESCE(p.importance, 0) * r.intensity_score) AS total_points
+     FROM study_records r
+     LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
      WHERE ${conditions.join(" AND ")}
-     GROUP BY study_date
-     ORDER BY study_date`,
+     GROUP BY r.study_date
+     ORDER BY r.study_date`,
   ).bind(...bindings).all<HeatmapDay>();
   return result.results.map((row) => ({
     date: row.date,
     count: Number(row.count),
     average_intensity: Number(row.average_intensity),
     total_intensity: Number(row.total_intensity),
+    total_points: Number(row.total_points),
   }));
 }
 
@@ -116,22 +126,26 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
   const weekStart = weekStartString(today);
   const trendStart = shiftDate(today, -13);
   const db = database();
-  const [metrics, activeDates, trendRows, heatmap] = await Promise.all([
+  const [metrics, activeDates, trendRows, heatmap, credits] = await Promise.all([
     db.prepare(
       `SELECT
          COUNT(*) AS total_records,
          COUNT(DISTINCT study_date) AS total_active_days,
          COALESCE(SUM(intensity_score), 0) AS total_intensity,
+         COALESCE(SUM(COALESCE(p.importance, 0) * intensity_score), 0) AS total_points,
          COALESCE(AVG(intensity_score), 0) AS overall_average,
          SUM(CASE WHEN study_date = ? THEN 1 ELSE 0 END) AS today_count,
          COALESCE(AVG(CASE WHEN study_date = ? THEN intensity_score END), 0) AS today_average,
          COALESCE(SUM(CASE WHEN study_date = ? THEN intensity_score ELSE 0 END), 0) AS today_intensity,
+         COALESCE(SUM(CASE WHEN study_date = ? THEN COALESCE(p.importance, 0) * intensity_score ELSE 0 END), 0) AS today_points,
          SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN 1 ELSE 0 END) AS week_count,
          COALESCE(AVG(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score END), 0) AS week_average,
-         COALESCE(SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score ELSE 0 END), 0) AS week_intensity
-       FROM study_records
-       WHERE user_id = ?`,
-    ).bind(today, today, today, weekStart, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap">>(),
+         COALESCE(SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score ELSE 0 END), 0) AS week_intensity,
+         COALESCE(SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN COALESCE(p.importance, 0) * intensity_score ELSE 0 END), 0) AS week_points
+       FROM study_records r
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+       WHERE r.user_id = ?`,
+    ).bind(today, today, today, today, weekStart, today, weekStart, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap" | "total_credits" | "completed_projects">>(),
     db.prepare(
       `SELECT DISTINCT study_date AS date
        FROM study_records
@@ -139,14 +153,21 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
        ORDER BY study_date`,
     ).bind(userId, today).all<{ date: string }>(),
     db.prepare(
-      `SELECT study_date AS date, COUNT(*) AS count, AVG(intensity_score) AS average_intensity,
-              SUM(intensity_score) AS total_intensity
-       FROM study_records
-       WHERE user_id = ? AND study_date >= ? AND study_date <= ?
-       GROUP BY study_date
-       ORDER BY study_date`,
+      `SELECT r.study_date AS date, COUNT(*) AS count, AVG(r.intensity_score) AS average_intensity,
+              SUM(r.intensity_score) AS total_intensity,
+              SUM(COALESCE(p.importance, 0) * r.intensity_score) AS total_points
+       FROM study_records r
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+       WHERE r.user_id = ? AND r.study_date >= ? AND r.study_date <= ?
+       GROUP BY r.study_date
+       ORDER BY r.study_date`,
     ).bind(userId, trendStart, today).all<HeatmapDay>(),
     getHeatmapData(userId, today),
+    db.prepare(
+      `SELECT COUNT(*) AS completed_projects, COALESCE(SUM(importance), 0) AS total_credits
+       FROM projects
+       WHERE user_id = ? AND status = 'completed'`,
+    ).bind(userId).first<{ completed_projects: number; total_credits: number }>(),
   ]);
 
   const streaks = calculateStreaks(activeDates.results.map((row) => row.date), today);
@@ -154,13 +175,18 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
     total_records: Number(metrics?.total_records || 0),
     total_active_days: Number(metrics?.total_active_days || 0),
     total_intensity: Number(metrics?.total_intensity || 0),
+    total_points: Number(metrics?.total_points || 0),
     overall_average: Number(metrics?.overall_average || 0),
     today_count: Number(metrics?.today_count || 0),
     today_average: Number(metrics?.today_average || 0),
     today_intensity: Number(metrics?.today_intensity || 0),
+    today_points: Number(metrics?.today_points || 0),
     week_count: Number(metrics?.week_count || 0),
     week_average: Number(metrics?.week_average || 0),
     week_intensity: Number(metrics?.week_intensity || 0),
+    week_points: Number(metrics?.week_points || 0),
+    total_credits: Number(credits?.total_credits || 0),
+    completed_projects: Number(credits?.completed_projects || 0),
     current_streak: streaks.current,
     longest_streak: streaks.longest,
     trend: fillTrend(trendRows.results, today),

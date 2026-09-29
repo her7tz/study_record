@@ -17,15 +17,17 @@ export function validateProject(input: StudyProjectInput) {
   if (input.target_date && !/^\d{4}-\d{2}-\d{2}$/.test(input.target_date)) return "请选择有效的计划完成日期。";
   if (input.start_date && input.target_date && input.target_date < input.start_date) return "计划完成日期不能早于开始日期。";
   if (!projectColors.includes(input.color)) return "请选择有效的项目颜色。";
+  if (!Number.isInteger(input.importance) || input.importance < 1 || input.importance > 5) return "项目重要度需为 1–5。";
   return null;
 }
 
 export async function listProjects(userId: string) {
   const result = await database()
     .prepare(
-      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color,
+      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance,
               COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
               COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
+              COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
               p.created_at, p.updated_at
        FROM projects p
        LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
@@ -41,13 +43,13 @@ export async function listProjects(userId: string) {
 export async function insertProject(userId: string, input: StudyProjectInput) {
   const project = await database()
     .prepare(
-      `INSERT INTO projects (user_id, name, description, goal, status, start_date, target_date, color)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, created_at, updated_at`,
+      `INSERT INTO projects (user_id, name, description, goal, status, start_date, target_date, color, importance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, created_at, updated_at`,
     )
-    .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color)
-    .first<Omit<StudyProject, "record_count" | "average_intensity" | "total_intensity">>();
-  return project ? { ...project, record_count: 0, average_intensity: null, total_intensity: 0 } : null;
+    .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance)
+    .first<Omit<StudyProject, "record_count" | "average_intensity" | "total_intensity" | "total_points">>();
+  return project ? { ...project, record_count: 0, average_intensity: null, total_intensity: 0, total_points: 0 } : null;
 }
 
 export async function editProject(userId: string, id: number, input: StudyProjectInput) {
@@ -55,17 +57,18 @@ export async function editProject(userId: string, id: number, input: StudyProjec
   const updated = await db
     .prepare(
       `UPDATE projects
-       SET name = ?, description = ?, goal = ?, status = ?, start_date = ?, target_date = ?, color = ?, updated_at = CURRENT_TIMESTAMP
+       SET name = ?, description = ?, goal = ?, status = ?, start_date = ?, target_date = ?, color = ?, importance = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ?
-       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, created_at, updated_at`,
+       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, created_at, updated_at`,
     )
-    .bind(input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, id, userId)
+    .bind(input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, id, userId)
     .first<{ id: number }>();
   if (!updated) return null;
   return db.prepare(
-    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color,
+    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance,
             COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
             COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
+            COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
             p.created_at, p.updated_at
      FROM projects p
      LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id

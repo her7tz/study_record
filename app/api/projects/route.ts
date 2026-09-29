@@ -29,6 +29,7 @@ function readProjectInput(payload: Partial<StudyProjectInput>): StudyProjectInpu
     start_date: payload.start_date ? String(payload.start_date) : null,
     target_date: payload.target_date ? String(payload.target_date) : null,
     color: projectColors.includes(requestedColor) ? requestedColor : "blue",
+    importance: Number(payload.importance ?? 3),
   };
 }
 

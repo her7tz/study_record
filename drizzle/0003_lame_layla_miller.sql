@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `importance` integer DEFAULT 3 NOT NULL;

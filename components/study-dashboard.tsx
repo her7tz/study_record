@@ -6,6 +6,7 @@ import {
   CalendarRange,
   CalendarDays,
   ChevronRight,
+  Download,
   Flame,
   FolderKanban,
   Gauge,
@@ -16,6 +17,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Star,
   Target,
   TrendingUp,
   Trash2,
@@ -102,7 +104,7 @@ const statusLabels: Record<ProjectStatus, string> = {
   completed: "已完成",
 };
 const trendConfig = {
-  total_intensity: { label: "累计强度", color: "#2254d1" },
+  total_points: { label: "积分", color: "#2254d1" },
 } satisfies ChartConfig;
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
@@ -126,6 +128,7 @@ async function requestJson(url: string, init: RequestInit) {
     total?: number;
     average_intensity?: number;
     total_intensity?: number;
+    total_points?: number;
     analytics?: StudyAnalytics;
     heatmap?: HeatmapDay[];
   };
@@ -227,7 +230,7 @@ function RecordEditor({
               <SelectTrigger className="project-select"><SelectValue placeholder="选择项目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">未分类</SelectItem>
-                {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+                {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name} · 重要度 {project.importance}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -342,30 +345,35 @@ function RecordList({
         <section className="record-group" key={date}>
           <div className="date-heading">
             <h3>{formatStudyDate(date)}</h3>
-            <span>累计强度 {items.reduce((sum, item) => sum + item.intensity_score, 0)}</span>
+            <span>
+              累计强度 {items.reduce((sum, item) => sum + item.intensity_score, 0)} · 积分 {items.reduce((sum, item) => {
+                const project = projects.find((candidate) => candidate.id === item.project_id);
+                return sum + item.intensity_score * Number(project?.importance || 0);
+              }, 0)}
+            </span>
           </div>
           <div className="record-stack">
-            {items.map((record) => (
-              <article className="record-card" key={record.id}>
+            {items.map((record) => {
+              const recordProject = projects.find((item) => item.id === record.project_id);
+              const points = record.intensity_score * Number(recordProject?.importance || 0);
+              return <article className="record-card" key={record.id}>
                 <div className={`subject-mark mark-${record.id % 4}`}>{record.subject.slice(0, 1).toUpperCase()}</div>
                 <div className="record-copy">
                   <h4>{record.subject}</h4>
-                  {record.project_id ? (() => {
-                    const project = projects.find((item) => item.id === record.project_id);
-                    return project ? <span className={`project-pill project-${project.color}`}>{project.name}</span> : null;
-                  })() : null}
+                  {recordProject ? <span className={`project-pill project-${recordProject.color}`}>{recordProject.name}</span> : null}
                   <p className={record.note ? "" : "muted"}>{record.note || "没有填写备注"}</p>
                 </div>
                 <div className="record-intensity" aria-label={`学习强度 ${record.intensity_score} 分`}>
                   <Gauge /><strong>{record.intensity_score}</strong><span>/ 5</span>
+                  <b>{points} 积分</b>
                   <div className="intensity-meter" aria-hidden="true">{intensityChoices.map((score) => <i key={score} className={score <= record.intensity_score ? "active" : ""} />)}</div>
                 </div>
                 <div className="record-actions">
                   <RecordEditor today={today} projects={projects} record={record} compact onSaved={onSaved} />
                   <DeleteRecord record={record} onDeleted={onDeleted} />
                 </div>
-              </article>
-            ))}
+              </article>;
+            })}
           </div>
         </section>
       ))}
@@ -377,13 +385,13 @@ function StudyTrend({ analytics }: { analytics: StudyAnalytics }) {
   const activeDays = analytics.trend.filter((day) => day.count > 0).length;
   const recent = analytics.trend.slice(-7);
   const previous = analytics.trend.slice(0, 7);
-  const total = (days: StudyAnalytics["trend"]) => days.reduce((sum, day) => sum + day.total_intensity, 0);
+  const total = (days: StudyAnalytics["trend"]) => days.reduce((sum, day) => sum + day.total_points, 0);
   const change = total(recent) - total(previous);
 
   return (
     <section className="trend-card" aria-labelledby="trend-title">
       <div className="trend-heading">
-        <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天累计强度</h2></div>
+        <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天积分趋势</h2></div>
         <div className="trend-summary">
           <span><strong>{activeDays}</strong> 个学习日</span>
           <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change} 较前 7 天</span>
@@ -393,8 +401,8 @@ function StudyTrend({ analytics }: { analytics: StudyAnalytics }) {
         <AreaChart data={analytics.trend} margin={{ top: 12, right: 10, left: -22, bottom: 0 }}>
           <defs>
             <linearGradient id="intensity-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-total_intensity)" stopOpacity={0.32} />
-              <stop offset="100%" stopColor="var(--color-total_intensity)" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="var(--color-total_points)" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="var(--color-total_points)" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 5" />
@@ -402,9 +410,9 @@ function StudyTrend({ analytics }: { analytics: StudyAnalytics }) {
           <YAxis domain={[0, "auto"]} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
           <ChartTooltip
             cursor={{ stroke: "#9db4f0", strokeDasharray: "3 3" }}
-            content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">累计强度 {Number(value)}</span>} />}
+            content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">积分 {Number(value)}</span>} />}
           />
-          <Area type="monotone" dataKey="total_intensity" stroke="var(--color-total_intensity)" strokeWidth={2.5} fill="url(#intensity-fill)" activeDot={{ r: 5 }} />
+          <Area type="monotone" dataKey="total_points" stroke="var(--color-total_points)" strokeWidth={2.5} fill="url(#intensity-fill)" activeDot={{ r: 5 }} />
         </AreaChart>
       </ChartContainer>
     </section>
@@ -419,6 +427,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
   const [selectedTotal, setSelectedTotal] = useState(0);
   const [selectedAverage, setSelectedAverage] = useState(0);
   const [selectedTotalIntensity, setSelectedTotalIntensity] = useState(0);
+  const [selectedTotalPoints, setSelectedTotalPoints] = useState(0);
   const [loadingDay, setLoadingDay] = useState(false);
   const displayedHeatmap = projectFilter === "all" ? initialDays : heatmap;
   const totals = new Map(displayedHeatmap.map((day) => [day.date, day]));
@@ -440,6 +449,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
   const visibleDays = days.filter((day) => !day.future);
   const activeDays = visibleDays.filter((day) => day.score > 0).length;
   const visibleIntensity = displayedHeatmap.reduce((sum, day) => sum + day.total_intensity, 0);
+  const visiblePoints = displayedHeatmap.reduce((sum, day) => sum + day.total_points, 0);
 
   async function changeProject(value: string) {
     setProjectFilter(value);
@@ -459,6 +469,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
     setSelectedTotal(0);
     setSelectedAverage(0);
     setSelectedTotalIntensity(0);
+    setSelectedTotalPoints(0);
     setLoadingDay(true);
     try {
       const project = projectFilter === "all" ? "" : `&project_id=${encodeURIComponent(projectFilter)}`;
@@ -467,6 +478,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
       setSelectedTotal(result.total || 0);
       setSelectedAverage(result.average_intensity || 0);
       setSelectedTotalIntensity(result.total_intensity || 0);
+      setSelectedTotalPoints(result.total_points || 0);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "当天记录加载失败。");
     } finally {
@@ -493,7 +505,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
               {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <p><strong>{activeDays}</strong> 个活跃日 · 累计强度 {visibleIntensity}</p>
+          <p><strong>{activeDays}</strong> 个活跃日 · 强度 {visibleIntensity} · 积分 {visiblePoints}</p>
         </div>
       </div>
       <div className="heatmap-scroll">
@@ -507,8 +519,8 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
                 disabled={day.future}
                 className={`heat-cell level-${day.level} ${selectedDate === day.key ? "selected" : ""}`}
                 onClick={() => openDay(day.key)}
-                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，累计强度 ${day.score}` : "无记录"}`}
-                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，累计强度 ${day.score}` : "无学习记录"}`}
+                title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无记录"}`}
+                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无学习记录"}`}
               />
             ))}
           </div>
@@ -524,7 +536,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
               {loadingDay
                 ? "正在读取当天记录…"
                 : selectedRecords.length
-                ? `${selectedTotal} 条学习记录 · 累计强度 ${selectedTotalIntensity} · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
+                ? `${selectedTotal} 条学习记录 · 累计强度 ${selectedTotalIntensity} · 积分 ${selectedTotalPoints} · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
                 : "这一天还没有学习记录。"}
             </DialogDescription>
           </DialogHeader>
@@ -539,7 +551,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
                       {project ? <span className={`project-pill project-${project.color}`}>{project.name}</span> : <span className="day-unclassified">未分类</span>}
                       {record.note ? <p>{record.note}</p> : null}
                     </div>
-                    <strong><Gauge />{record.intensity_score}<small>/5</small></strong>
+                    <strong><Gauge />{record.intensity_score}<small>/5 · {record.intensity_score * Number(project?.importance || 0)} 积分</small></strong>
                   </article>
                 );
               })}
@@ -562,6 +574,7 @@ function projectInput(project: StudyProject | null): StudyProjectInput {
     start_date: project?.start_date || null,
     target_date: project?.target_date || null,
     color: project?.color || "blue",
+    importance: project?.importance || 3,
   };
 }
 
@@ -653,6 +666,24 @@ function ProjectEditor({
               placeholder="例如：完成一个可发布的学习记录网站"
               onChange={(event) => setValues({ ...values, goal: event.target.value })}
             />
+          </div>
+          <div className="form-row">
+            <div className="label-line"><Label>项目重要度</Label><span>{values.importance} / 5</span></div>
+            <div className="importance-choices" aria-label="项目重要度">
+              {intensityChoices.map((score) => (
+                <button
+                  key={score}
+                  type="button"
+                  className={values.importance === score ? "active" : ""}
+                  onClick={() => setValues({ ...values, importance: score })}
+                  aria-label={`重要度 ${score}`}
+                  aria-pressed={values.importance === score}
+                >
+                  <Star /><strong>{score}</strong>
+                </button>
+              ))}
+            </div>
+            <p className="form-hint">记录积分 = 项目重要度 × 学习强度；完成项目可获得同等学分。</p>
           </div>
           <div className="project-form-grid">
             <div className="form-row">
@@ -771,12 +802,14 @@ function ProjectBoard({
       {projects.map((project) => {
         const recordCount = Number(project.record_count || 0);
         const totalIntensity = Number(project.total_intensity || 0);
+        const totalPoints = Number(project.total_points || 0);
         return (
           <article className={`project-card project-${project.color}`} key={project.id}>
             <div className="project-card-top">
               <div className="project-card-identity">
                 <span className="project-icon"><FolderKanban /></span>
                 <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
+                <span className="project-importance"><Star />重要度 {project.importance}</span>
               </div>
               <div className="record-actions">
                 <ProjectEditor project={project} compact onSaved={onSaved} />
@@ -792,7 +825,9 @@ function ProjectBoard({
             <div className="project-stats">
               <span><strong>{recordCount}</strong> 条记录</span>
               <span><strong>{totalIntensity}</strong> 累计强度</span>
+              <span><strong>{totalPoints}</strong> 积分</span>
             </div>
+            {project.status === "completed" ? <div className="project-credit"><Star />已获得 {project.importance} 学分</div> : null}
             <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
           </article>
         );
@@ -812,6 +847,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   const [historyTotal, setHistoryTotal] = useState(initialRecordTotal);
   const [historyAverage, setHistoryAverage] = useState(initialAnalytics.overall_average);
   const [historyTotalIntensity, setHistoryTotalIntensity] = useState(initialAnalytics.total_intensity);
+  const [historyTotalPoints, setHistoryTotalPoints] = useState(initialAnalytics.total_points);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
 
@@ -850,14 +886,17 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
   const saveProject = useCallback((project: StudyProject) => {
     setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
-  }, []);
+    setHistoryRevision((current) => current + 1);
+    void refreshAnalytics();
+  }, [refreshAnalytics]);
 
   const deleteProject = useCallback((id: number) => {
     setProjects((current) => current.filter((item) => item.id !== id));
     setRecords((current) => current.map((record) => record.project_id === id ? { ...record, project_id: null } : record));
     setProjectFilter((current) => current === String(id) ? "all" : current);
     setHistoryRevision((current) => current + 1);
-  }, []);
+    void refreshAnalytics();
+  }, [refreshAnalytics]);
 
   const viewProject = useCallback((id: number) => {
     setProjectFilter(String(id));
@@ -878,6 +917,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
         setHistoryTotal(result.total || 0);
         setHistoryAverage(result.average_intensity || 0);
         setHistoryTotalIntensity(result.total_intensity || 0);
+        setHistoryTotalPoints(result.total_points || 0);
       } catch (error) {
         if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "历史记录加载失败。");
       } finally {
@@ -901,6 +941,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       setHistoryTotal(result.total || 0);
       setHistoryAverage(result.average_intensity || 0);
       setHistoryTotalIntensity(result.total_intensity || 0);
+      setHistoryTotalPoints(result.total_points || 0);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "更多记录加载失败。");
     } finally {
@@ -955,6 +996,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           status: { type: "string", enum: [...projectStatuses] },
           start_date: { type: ["string", "null"], description: "YYYY-MM-DD 格式的开始日期" },
           target_date: { type: ["string", "null"], description: "YYYY-MM-DD 格式的计划完成日期" },
+          importance: { type: "integer", minimum: 1, maximum: 5, description: "项目重要度，1 到 5" },
         },
         required: ["name"],
         additionalProperties: false,
@@ -973,6 +1015,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             start_date: value.start_date || null,
             target_date: value.target_date || null,
             color: value.color || "blue",
+            importance: value.importance || 3,
           }),
         });
         if (!result.project) throw new Error("项目没有保存成功。");
@@ -998,10 +1041,10 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
         </TabsList>
         <div className="sidebar-note">
-          <span>本周累计强度</span>
-          <strong>{analytics.week_intensity || "尚无记录"}</strong>
+          <span>本周积分</span>
+          <strong>{analytics.week_points || "尚无记录"}</strong>
           <Progress value={analytics.week_average * 20} />
-          <small>{analytics.week_count} 次记录 · 平均 {analytics.week_average ? analytics.week_average.toFixed(1) : "—"} / 5</small>
+          <small>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</small>
         </div>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
@@ -1024,13 +1067,14 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             <article className="focus-card">
               <div className="focus-copy"><span>今日累计强度</span><strong>{analytics.today_intensity || "—"}</strong></div>
               <div className="focus-ring" style={{ "--progress": `${analytics.today_average * 72}deg` } as React.CSSProperties}>
-                <span>{analytics.today_count ? `${analytics.today_count} 次` : "待记录"}</span>
+                <span>{analytics.today_count ? `${analytics.today_points} 积分` : "待记录"}</span>
               </div>
               <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? `今日平均强度 ${analytics.today_average.toFixed(1)} / 5` : "每条记录的强度会在当天累加"}</p></div>
             </article>
             <article className="stat-card streak-card"><span><Flame />连续学习</span><strong>{analytics.current_streak}</strong><small>天</small><p>最长连续 {analytics.longest_streak} 天</p></article>
-            <article className="stat-card"><span>本周累计强度</span><strong>{analytics.week_intensity}</strong><p>{analytics.week_count} 次记录 · 平均 {analytics.week_average ? analytics.week_average.toFixed(1) : "—"} / 5</p></article>
-            <article className="stat-card"><span>历史累计强度</span><strong>{analytics.total_intensity}</strong><p>{analytics.total_records} 条记录 · {analytics.total_active_days} 个学习日</p></article>
+            <article className="stat-card"><span>本周积分</span><strong>{analytics.week_points}</strong><p>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</p></article>
+            <article className="stat-card"><span>累计积分</span><strong>{analytics.total_points}</strong><p>累计强度 {analytics.total_intensity} · {analytics.total_records} 条记录</p></article>
+            <article className="stat-card credit-card"><span><Star />项目学分</span><strong>{analytics.total_credits}</strong><small>学分</small><p>{analytics.completed_projects} 个已完成项目</p></article>
           </section>
           <StudyTrend analytics={analytics} />
           <StudyHeatmap initialDays={analytics.heatmap} projects={projects} today={today} />
@@ -1045,8 +1089,12 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {historyTotal} 条学习记录 · 累计强度 {historyTotalIntensity} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p></div>
-            <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
+            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {historyTotal} 条学习记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p></div>
+            <div className="header-actions">
+              <a className="export-button" href="/api/export?format=csv" download><Download />导出 CSV</a>
+              <a className="export-button" href="/api/export?format=json" download><Download />导出 JSON</a>
+              <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
+            </div>
           </header>
           <div className="history-filters">
             <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索学习记录" />{query ? <span>{historyTotal} 条结果</span> : null}</div>
@@ -1067,7 +1115,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="projects" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1><p className="page-description">用项目整理长期目标、课程和正在推进的作品。</p></div>
+            <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1><p className="page-description">重要度为 1–5；积分 = 重要度 × 强度，完成项目后获得对应学分。</p></div>
             <ProjectEditor onSaved={saveProject} />
           </header>
           <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} />

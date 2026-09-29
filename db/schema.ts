@@ -13,6 +13,7 @@ export const projects = sqliteTable(
     startDate: text("start_date"),
     targetDate: text("target_date"),
     color: text("color").notNull().default("blue"),
+    importance: integer("importance").notNull().default(3),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
