@@ -32,6 +32,9 @@ export async function POST(request: Request) {
     if (!restored) return jsonError("内容已超过 7 天恢复期限，或已不在回收站中。", 404);
     return Response.json({ ok: true });
   } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE")) {
+      return jsonError("已经有同名项目，请先修改当前项目名称后再恢复。", 409);
+    }
     console.error("trash:restore", error);
     return jsonError("恢复失败，请稍后再试。", 503);
   }
