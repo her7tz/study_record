@@ -104,7 +104,7 @@ function fillTrend(rows: HeatmapDay[], today: string) {
 
 export async function getHeatmapData(userId: string, today: string, projectId?: number | null, month = today.slice(0, 7)) {
   const range = monthRange(month, today);
-  const conditions = ["r.user_id = ?", "r.study_date >= ?", "r.study_date <= ?"];
+  const conditions = ["r.user_id = ?", "r.deleted_at IS NULL", "r.study_date >= ?", "r.study_date <= ?"];
   const bindings: Array<string | number> = [userId, range.start, range.end];
   if (projectId === null) {
     conditions.push("r.project_id IS NULL");
@@ -117,7 +117,7 @@ export async function getHeatmapData(userId: string, today: string, projectId?: 
             SUM(r.intensity_score) AS total_intensity,
             SUM(COALESCE(p.importance, 0) * r.intensity_score) AS total_points
      FROM study_records r
-     LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+     LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
      WHERE ${conditions.join(" AND ")}
      GROUP BY r.study_date
      ORDER BY r.study_date`,
@@ -152,13 +152,13 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
          COALESCE(SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN intensity_score ELSE 0 END), 0) AS week_intensity,
          COALESCE(SUM(CASE WHEN study_date >= ? AND study_date <= ? THEN COALESCE(p.importance, 0) * intensity_score ELSE 0 END), 0) AS week_points
        FROM study_records r
-       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
-       WHERE r.user_id = ?`,
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
+       WHERE r.user_id = ? AND r.deleted_at IS NULL`,
     ).bind(today, today, today, today, weekStart, today, weekStart, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap" | "total_credits" | "completed_projects">>(),
     db.prepare(
       `SELECT DISTINCT study_date AS date
        FROM study_records
-       WHERE user_id = ? AND study_date <= ?
+       WHERE user_id = ? AND deleted_at IS NULL AND study_date <= ?
        ORDER BY study_date`,
     ).bind(userId, today).all<{ date: string }>(),
     db.prepare(
@@ -166,8 +166,8 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
               SUM(r.intensity_score) AS total_intensity,
               SUM(COALESCE(p.importance, 0) * r.intensity_score) AS total_points
        FROM study_records r
-       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
-       WHERE r.user_id = ? AND r.study_date >= ? AND r.study_date <= ?
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
+       WHERE r.user_id = ? AND r.deleted_at IS NULL AND r.study_date >= ? AND r.study_date <= ?
        GROUP BY r.study_date
        ORDER BY r.study_date`,
     ).bind(userId, trendStart, today).all<HeatmapDay>(),
@@ -175,15 +175,15 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
     db.prepare(
       `SELECT COUNT(*) AS completed_projects, COALESCE(SUM(importance), 0) AS total_credits
        FROM projects
-       WHERE user_id = ? AND status = 'completed'`,
+       WHERE user_id = ? AND status = 'completed' AND deleted_at IS NULL`,
     ).bind(userId).first<{ completed_projects: number; total_credits: number }>(),
     db.prepare(
       `SELECT p.id AS project_id, p.name AS project_name, p.color AS project_color,
               COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
               COALESCE(SUM(CASE WHEN r.study_date >= ? AND r.study_date <= ? THEN r.intensity_score * p.importance ELSE 0 END), 0) AS week_points
        FROM projects p
-       LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
-       WHERE p.user_id = ?
+       LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at IS NULL
+       WHERE p.user_id = ? AND p.deleted_at IS NULL
        GROUP BY p.id
        ORDER BY p.sort_order ASC, p.created_at ASC, p.id ASC`,
     ).bind(weekStart, today, userId).all<ProjectPointShare>(),

@@ -20,6 +20,7 @@ import {
   Pencil,
   Plus,
   Search,
+  RotateCcw,
   Star,
   Target,
   TrendingUp,
@@ -66,6 +67,7 @@ import { formatStudyDate } from "@/lib/date";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
 import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
 import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
+import type { TrashItem } from "@/lib/trash";
 
 type DashboardProps = {
   initialRecords: StudyRecord[];
@@ -145,6 +147,7 @@ async function requestJson(url: string, init: RequestInit) {
     total_points?: number;
     analytics?: StudyAnalytics;
     heatmap?: HeatmapDay[];
+    items?: TrashItem[];
   };
   if (!response.ok) throw new Error(payload.error || "操作失败，请稍后再试。");
   return payload;
@@ -293,7 +296,7 @@ function DeleteRecord({ record, onDeleted }: { record: StudyRecord; onDeleted: (
     try {
       await requestJson(`/api/records?id=${record.id}`, { method: "DELETE" });
       onDeleted(record.id);
-      toast.success("记录已删除");
+      toast.success("已移入回收站，7 天内可恢复");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除失败，请稍后再试。");
     } finally {
@@ -309,7 +312,7 @@ function DeleteRecord({ record, onDeleted }: { record: StudyRecord; onDeleted: (
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>删除“{record.subject}”？</AlertDialogTitle>
-          <AlertDialogDescription>这条学习记录会被永久删除，此操作无法撤销。</AlertDialogDescription>
+          <AlertDialogDescription>记录会移入回收站，你可以在 7 天内恢复。</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>保留记录</AlertDialogCancel>
@@ -319,6 +322,78 @@ function DeleteRecord({ record, onDeleted }: { record: StudyRecord; onDeleted: (
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+function TrashView({ active, revision, onRestored }: { active: boolean; revision: number; onRestored: () => void }) {
+  const [items, setItems] = useState<TrashItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      void requestJson("/api/trash", { method: "GET", signal: controller.signal })
+        .then((result) => setItems(result.items || []))
+        .catch((error) => {
+          if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "回收站加载失败。");
+        })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [active, revision]);
+
+  async function restore(item: TrashItem) {
+    const key = `${item.kind}:${item.id}`;
+    setRestoringId(key);
+    try {
+      await requestJson("/api/trash", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: item.kind, id: item.id }),
+      });
+      setItems((current) => current.filter((entry) => `${entry.kind}:${entry.id}` !== key));
+      onRestored();
+      toast.success(item.kind === "project" ? "项目及关联记录已恢复" : "学习记录已恢复");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "恢复失败，请稍后再试。");
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
+  return (
+    <section className="trash-view" aria-label="回收站内容">
+      <div className="trash-intro"><Trash2 /><p>内容删除后 7 天内可恢复，超过期限将无法恢复。</p></div>
+      {loading ? <div className="history-loading">正在读取回收站…</div> : items.length ? (
+        <div className="trash-list">
+          {items.map((item) => {
+            const key = `${item.kind}:${item.id}`;
+            const deadline = new Date(item.expires_at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+            return (
+              <article className="trash-item" key={key}>
+                <div className="trash-item-copy">
+                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : "学习记录"}</span>
+                  <h2>{item.title}</h2>
+                  {item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : <p>{item.record_count} 条关联记录会随项目一起恢复</p>}
+                  <small>恢复期限至 {deadline}</small>
+                </div>
+                <Button type="button" variant="outline" onClick={() => void restore(item)} disabled={restoringId !== null}>
+                  <RotateCcw />{restoringId === key ? "恢复中…" : "恢复"}
+                </Button>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目和学习记录会显示在这里。</p></div>
+      )}
+    </section>
   );
 }
 
@@ -914,7 +989,7 @@ function DeleteProject({ project, onDeleted }: { project: StudyProject; onDelete
     try {
       await requestJson(`/api/projects?id=${project.id}`, { method: "DELETE" });
       onDeleted(project.id);
-      toast.success("项目已删除，关联记录已保留");
+      toast.success("已移入回收站，项目及记录可在 7 天内恢复");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "项目删除失败，请稍后再试。");
     } finally {
@@ -930,7 +1005,7 @@ function DeleteProject({ project, onDeleted }: { project: StudyProject; onDelete
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>删除“{project.name}”？</AlertDialogTitle>
-          <AlertDialogDescription>项目会被删除，已有学习记录将保留并归入“未分类”。</AlertDialogDescription>
+          <AlertDialogDescription>项目和关联的学习记录会一起移入回收站，可在 7 天内一起恢复。</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>保留项目</AlertDialogCancel>
@@ -1081,6 +1156,12 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       // Project counts will refresh on the next successful request.
     }
   }, []);
+
+  const restoreTrash = useCallback(() => {
+    setHistoryRevision((current) => current + 1);
+    void refreshAnalytics();
+    void refreshProjects();
+  }, [refreshAnalytics, refreshProjects]);
 
   const saveRecord: (record: StudyRecord) => void = useCallback(() => {
     setHistoryRevision((current) => current + 1);
@@ -1266,6 +1347,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <TabsTrigger value="dashboard"><LayoutDashboard />今日概览</TabsTrigger>
           <TabsTrigger value="history"><History />历史记录</TabsTrigger>
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
+          <TabsTrigger value="trash"><Trash2 />回收站</TabsTrigger>
         </TabsList>
         <div className="sidebar-note">
           <span>本周积分</span>
@@ -1341,12 +1423,20 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           </header>
           <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} onReorder={reorderProjectCards} />
         </TabsContent>
+
+        <TabsContent value="trash" className="view-content">
+          <header className="topbar history-header">
+            <div><p className="section-kicker">RECOVERY</p><h1>回收站</h1><p className="page-description">项目和学习记录可在删除后 7 天内恢复。</p></div>
+          </header>
+          <TrashView active={view === "trash"} revision={historyRevision} onRestored={restoreTrash} />
+        </TabsContent>
       </main>
 
       <TabsList className="mobile-nav">
         <TabsTrigger value="dashboard"><LayoutDashboard />今日</TabsTrigger>
         <TabsTrigger value="history"><History />历史</TabsTrigger>
         <TabsTrigger value="projects"><FolderKanban />项目</TabsTrigger>
+        <TabsTrigger value="trash"><Trash2 />回收站</TabsTrigger>
       </TabsList>
       <Toaster position="top-center" richColors />
     </Tabs>

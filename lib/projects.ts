@@ -30,8 +30,8 @@ export async function listProjects(userId: string) {
               COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
               p.created_at, p.updated_at
        FROM projects p
-       LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
-       WHERE p.user_id = ?
+       LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at IS NULL
+       WHERE p.user_id = ? AND p.deleted_at IS NULL
        GROUP BY p.id
        ORDER BY p.sort_order ASC, p.created_at ASC, p.id ASC`,
     )
@@ -43,7 +43,7 @@ export async function listProjects(userId: string) {
 export async function insertProject(userId: string, input: StudyProjectInput) {
   const db = database();
   const nextOrder = await db.prepare(
-    "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM projects WHERE user_id = ?",
+    "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM projects WHERE user_id = ? AND deleted_at IS NULL",
   ).bind(userId).first<{ next_order: number }>();
   const project = await db
     .prepare(
@@ -62,7 +62,7 @@ export async function editProject(userId: string, id: number, input: StudyProjec
     .prepare(
       `UPDATE projects
        SET name = ?, description = ?, goal = ?, status = ?, start_date = ?, target_date = ?, color = ?, importance = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ?
+       WHERE id = ? AND user_id = ? AND deleted_at IS NULL
        RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order, created_at, updated_at`,
     )
     .bind(input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, id, userId)
@@ -75,34 +75,34 @@ export async function editProject(userId: string, id: number, input: StudyProjec
             COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
             p.created_at, p.updated_at
      FROM projects p
-     LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
-     WHERE p.id = ? AND p.user_id = ?
+     LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at IS NULL
+     WHERE p.id = ? AND p.user_id = ? AND p.deleted_at IS NULL
      GROUP BY p.id`,
   ).bind(id, userId).first<StudyProject>();
 }
 
 export async function reorderProjects(userId: string, projectIds: number[]) {
   const db = database();
-  const owned = await db.prepare("SELECT id FROM projects WHERE user_id = ? ORDER BY id").bind(userId).all<{ id: number }>();
+  const owned = await db.prepare("SELECT id FROM projects WHERE user_id = ? AND deleted_at IS NULL ORDER BY id").bind(userId).all<{ id: number }>();
   const ownedIds = owned.results.map((project) => Number(project.id)).sort((a, b) => a - b);
   const requestedIds = [...projectIds].sort((a, b) => a - b);
   if (ownedIds.length !== requestedIds.length || ownedIds.some((id, index) => id !== requestedIds[index])) return false;
   await db.batch(projectIds.map((id, index) => db.prepare(
-    "UPDATE projects SET sort_order = ? WHERE id = ? AND user_id = ?",
+    "UPDATE projects SET sort_order = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
   ).bind(index, id, userId)));
   return true;
 }
 
-export async function removeProject(userId: string, id: number) {
+export async function removeProject(userId: string, id: number, deletedAt: string) {
   const db = database();
   const owned = await db
-    .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?")
+    .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
     .bind(id, userId)
     .first<{ id: number }>();
   if (!owned) return false;
   await db.batch([
-    db.prepare("UPDATE study_records SET project_id = NULL WHERE project_id = ? AND user_id = ?").bind(id, userId),
-    db.prepare("DELETE FROM projects WHERE id = ? AND user_id = ?").bind(id, userId),
+    db.prepare("UPDATE study_records SET deleted_at = ? WHERE project_id = ? AND user_id = ? AND deleted_at IS NULL").bind(deletedAt, id, userId),
+    db.prepare("UPDATE projects SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL").bind(deletedAt, id, userId),
   ]);
   return true;
 }

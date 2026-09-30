@@ -57,7 +57,7 @@ export function validateRecord(input: StudyRecordInput) {
 export async function listRecords(userId: string, options: StudyRecordQuery = {}): Promise<StudyRecordPage> {
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
   const offset = Math.max(options.offset ?? 0, 0);
-  const conditions = ["r.user_id = ?"];
+  const conditions = ["r.user_id = ?", "r.deleted_at IS NULL"];
   const bindings: Array<string | number> = [userId];
 
   if (options.date) {
@@ -81,7 +81,7 @@ export async function listRecords(userId: string, options: StudyRecordQuery = {}
     db.prepare(
       `SELECT r.id, r.user_id, r.study_date, r.subject, r.project_id, r.intensity_score, r.note, r.created_at, r.updated_at
        FROM study_records r
-       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
        WHERE ${where}
        ORDER BY r.study_date DESC, r.created_at DESC
        LIMIT ? OFFSET ?`,
@@ -91,7 +91,7 @@ export async function listRecords(userId: string, options: StudyRecordQuery = {}
               COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
               COALESCE(SUM(COALESCE(p.importance, 0) * r.intensity_score), 0) AS total_points
        FROM study_records r
-       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
        WHERE ${where}`,
     ).bind(...bindings).first<{ total: number; average_intensity: number; total_intensity: number; total_points: number }>(),
   ]);
@@ -110,7 +110,7 @@ export async function insertRecord(userId: string, input: StudyRecordInput) {
     .prepare(
       `INSERT INTO study_records (user_id, study_date, subject, project_id, intensity_score, note)
        SELECT ?, ?, ?, ?, ?, ?
-       WHERE ? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ?)
+       WHERE ? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL)
        RETURNING id, user_id, study_date, subject, project_id, intensity_score, note, created_at, updated_at`,
     )
     .bind(userId, input.study_date, input.subject, input.project_id, input.intensity_score, input.note, input.project_id, input.project_id, userId)
@@ -123,17 +123,18 @@ export async function editRecord(userId: string, id: number, input: StudyRecordI
       `UPDATE study_records
        SET study_date = ?, subject = ?, project_id = ?, intensity_score = ?, note = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ?
-         AND (? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ?))
+         AND deleted_at IS NULL
+         AND (? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL))
        RETURNING id, user_id, study_date, subject, project_id, intensity_score, note, created_at, updated_at`,
     )
     .bind(input.study_date, input.subject, input.project_id, input.intensity_score, input.note, id, userId, input.project_id, input.project_id, userId)
     .first<StudyRecord>();
 }
 
-export async function removeRecord(userId: string, id: number) {
+export async function removeRecord(userId: string, id: number, deletedAt: string) {
   const result = await database()
-    .prepare("DELETE FROM study_records WHERE id = ? AND user_id = ?")
-    .bind(id, userId)
+    .prepare("UPDATE study_records SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
+    .bind(deletedAt, id, userId)
     .run();
   return result.meta.changes > 0;
 }

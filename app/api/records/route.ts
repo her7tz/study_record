@@ -102,8 +102,8 @@ export async function DELETE(request: Request) {
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!Number.isInteger(id) || id < 1) return jsonError("找不到要删除的记录。", 400);
   try {
-    if (!(await removeRecord(user.userId, id))) return jsonError("这条记录不存在。", 404);
-    return Response.json({ ok: true });
+    if (!(await removeRecord(user.userId, id, new Date().toISOString()))) return jsonError("这条记录不存在。", 404);
+    return Response.json({ ok: true, undo_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() });
   } catch (error) {
     console.error("records:delete", error);
     return jsonError("删除失败，请稍后再试。", 503);

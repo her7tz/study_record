@@ -104,8 +104,8 @@ export async function DELETE(request: Request) {
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!Number.isInteger(id) || id < 1) return jsonError("找不到要删除的项目。", 400);
   try {
-    if (!(await removeProject(user.userId, id))) return jsonError("这个项目不存在。", 404);
-    return Response.json({ ok: true });
+    if (!(await removeProject(user.userId, id, new Date().toISOString()))) return jsonError("这个项目不存在。", 404);
+    return Response.json({ ok: true, undo_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() });
   } catch (error) {
     console.error("projects:delete", error);
     return jsonError("项目删除失败，请稍后再试。", 503);

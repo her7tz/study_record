@@ -48,8 +48,8 @@ export async function getExportData(userId: string) {
             CASE WHEN p.status = 'completed' THEN p.importance ELSE 0 END AS credits,
             p.created_at, p.updated_at
      FROM projects p
-     LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id
-     WHERE p.user_id = ?
+     LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at IS NULL
+     WHERE p.user_id = ? AND p.deleted_at IS NULL
      GROUP BY p.id
      ORDER BY p.updated_at DESC, p.id DESC`,
   ).bind(userId).all<ExportProject>();
@@ -64,8 +64,8 @@ export async function getExportData(userId: string) {
               COALESCE(p.importance, 0) * r.intensity_score AS points,
               r.note, r.created_at, r.updated_at
        FROM study_records r
-       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id
-       WHERE r.user_id = ?
+       LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
+       WHERE r.user_id = ? AND r.deleted_at IS NULL
        ORDER BY r.study_date DESC, r.created_at DESC
        LIMIT ? OFFSET ?`,
     ).bind(userId, pageSize, offset).all<ExportRecord>();

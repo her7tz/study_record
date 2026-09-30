@@ -15,11 +15,12 @@ export const projects = sqliteTable(
     color: text("color").notNull().default("blue"),
     importance: integer("importance").notNull().default(3),
     sortOrder: integer("sort_order").notNull().default(0),
+    deletedAt: text("deleted_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
-    uniqueIndex("idx_projects_user_name").on(table.userId, table.name),
+    uniqueIndex("idx_projects_user_name").on(table.userId, table.name).where(sql`${table.deletedAt} IS NULL`),
   ],
 );
 
@@ -33,6 +34,7 @@ export const studyRecords = sqliteTable(
     projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
     intensityScore: integer("intensity_score").notNull(),
     note: text("note").notNull().default(""),
+    deletedAt: text("deleted_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
