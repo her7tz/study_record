@@ -64,6 +64,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
 import { formatStudyDate } from "@/lib/date";
+import type { PointRedemption } from "@/lib/point-redemptions";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
 import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
 import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
@@ -146,6 +147,9 @@ async function requestJson(url: string, init: RequestInit) {
     total_intensity?: number;
     total_points?: number;
     analytics?: StudyAnalytics;
+    redemption?: PointRedemption;
+    redemptions?: PointRedemption[];
+    available_points?: number;
     heatmap?: HeatmapDay[];
     items?: TrashItem[];
   };
@@ -579,10 +583,12 @@ function PointDistributionDialog({
   analytics,
   scope,
   onClose,
+  onRedeem,
 }: {
   analytics: StudyAnalytics;
   scope: PointDistributionScope | null;
   onClose: () => void;
+  onRedeem: () => void;
 }) {
   const valueKey = scope === "week" ? "week_points" : "total_points";
   const data = analytics.project_points
@@ -633,6 +639,107 @@ function PointDistributionDialog({
         ) : (
           <div className="points-empty"><FolderKanban /><p>该周期还没有归入项目的积分。</p></div>
         )}
+        <DialogFooter className="points-dialog-footer">
+          <p>积分兑换会从可用余额中扣除，不影响学习记录与项目学分。</p>
+          <Button onClick={onRedeem}><Star />兑换积分</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PointRedemptionDialog({
+  open,
+  onClose,
+  onRedeemed,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onRedeemed: () => void;
+}) {
+  const [availablePoints, setAvailablePoints] = useState(0);
+  const [redemptions, setRedemptions] = useState<PointRedemption[]>([]);
+  const [rewardName, setRewardName] = useState("");
+  const [points, setPoints] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const loadRedemptions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await requestJson("/api/redemptions", { method: "GET" });
+      setAvailablePoints(Number(result.available_points || 0));
+      setRedemptions(result.redemptions || []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "兑换记录加载失败。");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) void loadRedemptions();
+  }, [loadRedemptions, open]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await requestJson("/api/redemptions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reward_name: rewardName, points: Number(points) }),
+      });
+      setRewardName("");
+      setPoints("");
+      await loadRedemptions();
+      onRedeemed();
+      toast.success("积分兑换已记录");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "兑换失败，请稍后再试。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && !saving && onClose()}>
+      <DialogContent className="redemption-dialog sm:max-w-[520px]">
+        <DialogHeader>
+          <p className="section-kicker">REDEEM POINTS</p>
+          <DialogTitle>积分兑换</DialogTitle>
+          <DialogDescription>记录你用积分兑换的奖励。兑换后会从可用余额中扣除。</DialogDescription>
+        </DialogHeader>
+        <div className="redemption-balance"><span>当前可用积分</span><strong>{loading ? "…" : availablePoints}</strong></div>
+        <form className="redemption-form" onSubmit={submit}>
+          <div className="form-row">
+            <Label htmlFor="redemption-reward">兑换内容</Label>
+            <Input id="redemption-reward" value={rewardName} maxLength={80} onChange={(event) => setRewardName(event.target.value)} placeholder="例如：看一场电影" required />
+          </div>
+          <div className="form-row">
+            <Label htmlFor="redemption-points">使用积分</Label>
+            <Input id="redemption-points" type="number" min={1} max={1000000} step={1} value={points} onChange={(event) => setPoints(event.target.value)} placeholder="输入整数" required />
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={saving || loading || !rewardName.trim() || !points || Number(points) > availablePoints}>
+              {saving ? "正在保存…" : "确认兑换"}
+            </Button>
+          </DialogFooter>
+          {points && Number(points) > availablePoints ? <p className="redemption-error">可用积分不足。</p> : null}
+        </form>
+        <section className="redemption-history" aria-labelledby="redemption-history-title">
+          <div className="redemption-history-heading"><h3 id="redemption-history-title">最近兑换</h3><span>最多显示 50 条</span></div>
+          {loading ? <p className="redemption-empty">正在读取兑换记录…</p> : redemptions.length ? (
+            <div className="redemption-list">
+              {redemptions.map((item) => (
+                <article key={item.id}>
+                  <div><strong>{item.reward_name}</strong><small>{item.created_at.slice(0, 16).replace("T", " ")}</small></div>
+                  <span>−{item.points} 积分</span>
+                </article>
+              ))}
+            </div>
+          ) : <p className="redemption-empty">还没有兑换记录。</p>}
+        </section>
       </DialogContent>
     </Dialog>
   );
@@ -1128,6 +1235,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   const [projects, setProjects] = useState(initialProjects);
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [pointDistribution, setPointDistribution] = useState<PointDistributionScope | null>(null);
+  const [redemptionOpen, setRedemptionOpen] = useState(false);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -1387,7 +1495,13 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           </section>
           <StudyTrend analytics={analytics} projects={projects} />
           <StudyHeatmap initialDays={analytics.heatmap} projects={projects} today={today} />
-          <PointDistributionDialog analytics={analytics} scope={pointDistribution} onClose={() => setPointDistribution(null)} />
+          <PointDistributionDialog
+            analytics={analytics}
+            scope={pointDistribution}
+            onClose={() => setPointDistribution(null)}
+            onRedeem={() => { setPointDistribution(null); setRedemptionOpen(true); }}
+          />
+          <PointRedemptionDialog open={redemptionOpen} onClose={() => setRedemptionOpen(false)} onRedeemed={() => void refreshAnalytics()} />
         </TabsContent>
 
         <TabsContent value="history" className="view-content">
