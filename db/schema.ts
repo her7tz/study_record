@@ -47,3 +47,15 @@ export const studyRecords = sqliteTable(
     index("idx_study_records_user_project").on(table.userId, table.projectId),
   ],
 );
+
+export const pointRedemptions = sqliteTable(
+  "point_redemptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    rewardName: text("reward_name").notNull(),
+    points: integer("points").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("idx_point_redemptions_user_created").on(table.userId, table.createdAt)],
+);
