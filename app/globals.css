@@ -336,6 +336,10 @@ button { cursor: pointer; }
 
 .page-description { margin: 10px 0 0; color: #6d798d; }
 .history-header { margin-bottom: 25px; }
+.history-sections { display: flex; width: fit-content; gap: 5px; margin: -3px 0 22px; padding: 4px; border: 1px solid #dce2eb; border-radius: 11px; background: #f3f5f8; }
+.history-sections button { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border: 0; border-radius: 8px; background: transparent; color: #66738a; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.history-sections button svg { width: 16px; }
+.history-sections button.active { background: white; color: #2254d1; box-shadow: 0 1px 4px rgba(20, 37, 66, .12); }
 .header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .export-button { display: inline-flex; min-height: 42px; align-items: center; gap: 6px; padding: 0 13px; border: 1px solid #d7dee8; border-radius: 9px; background: white; color: #43516a; font-size: .76rem; font-weight: 750; text-decoration: none; }
 .export-button:hover { border-color: #9db4f0; color: #2254d1; }
@@ -462,7 +466,7 @@ button { cursor: pointer; }
   .topbar { align-items: flex-start; }
   .topbar h1 { font-size: clamp(2rem, 9vw, 2.8rem); }
   .topbar .add-button { min-height: 42px; padding-inline: 13px; font-size: .78rem; }
-  .mobile-nav { position: fixed; inset: auto 15px 14px; z-index: 30; display: grid; width: auto; height: auto; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 5px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(7,19,39,.95); box-shadow: 0 16px 40px rgba(5,14,29,.25); backdrop-filter: blur(14px); }
+  .mobile-nav { position: fixed; inset: auto 15px 14px; z-index: 30; display: grid; width: auto; height: auto; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 5px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(7,19,39,.95); box-shadow: 0 16px 40px rgba(5,14,29,.25); backdrop-filter: blur(14px); }
   .mobile-nav [data-slot="tabs-trigger"] { height: 43px; gap: 7px; color: #8f9db4; }
   .mobile-nav [data-slot="tabs-trigger"]::after { display: none; }
   .mobile-nav [data-slot="tabs-trigger"][data-state="active"] { background: #173261; color: white; }

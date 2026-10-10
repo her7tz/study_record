@@ -678,7 +678,9 @@ function PointRedemptionDialog({
   }, []);
 
   useEffect(() => {
-    if (open) void loadRedemptions();
+    if (!open) return;
+    const timer = window.setTimeout(() => { void loadRedemptions(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadRedemptions, open]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -1234,9 +1236,9 @@ function ProjectBoard({
 export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnalytics, initialProjects, today, user, loadError }: DashboardProps) {
   const [projects, setProjects] = useState(initialProjects);
   const [analytics, setAnalytics] = useState(initialAnalytics);
-  const [pointDistribution, setPointDistribution] = useState<PointDistributionScope | null>(null);
-  const [redemptionOpen, setRedemptionOpen] = useState(false);
+  const [pointsDialog, setPointsDialog] = useState<PointDistributionScope | "redemption" | null>(null);
   const [view, setView] = useState("dashboard");
+  const [historySection, setHistorySection] = useState<"records" | "trash">("records");
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
   const [historyRecords, setHistoryRecords] = useState(initialRecords);
@@ -1320,7 +1322,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   }, []);
 
   useEffect(() => {
-    if (view !== "history") return;
+    if (view !== "history" || historySection !== "records") return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setHistoryLoading(true);
@@ -1344,7 +1346,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [historyRevision, projectFilter, query, view]);
+  }, [historyRevision, historySection, projectFilter, query, view]);
 
   async function loadMoreHistory() {
     setHistoryLoading(true);
@@ -1455,7 +1457,6 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <TabsTrigger value="dashboard"><LayoutDashboard />今日概览</TabsTrigger>
           <TabsTrigger value="history"><History />历史记录</TabsTrigger>
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
-          <TabsTrigger value="trash"><Trash2 />回收站</TabsTrigger>
         </TabsList>
         <div className="sidebar-note">
           <span>本周积分</span>
@@ -1489,30 +1490,35 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
               <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? `今日平均强度 ${analytics.today_average.toFixed(1)} / 5` : "每条记录的强度会在当天累加"}</p></div>
             </article>
             <article className="stat-card streak-card"><span><Flame />连续学习</span><strong>{analytics.current_streak}</strong><small>天</small><p>最长连续 {analytics.longest_streak} 天</p></article>
-            <button type="button" className="stat-card stat-card-button" onClick={() => setPointDistribution("week")}><span>本周积分</span><strong>{analytics.week_points}</strong><p>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</p><small>点击查看项目分布</small></button>
-            <button type="button" className="stat-card stat-card-button" onClick={() => setPointDistribution("total")}><span>累计积分</span><strong>{analytics.total_points}</strong><p>累计强度 {analytics.total_intensity} · {analytics.total_records} 条记录</p><small>点击查看项目分布</small></button>
+            <button type="button" className="stat-card stat-card-button" onClick={() => setPointsDialog("week")}><span>本周积分</span><strong>{analytics.week_points}</strong><p>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</p><small>点击查看项目分布</small></button>
+            <button type="button" className="stat-card stat-card-button" onClick={() => setPointsDialog("total")}><span>累计积分</span><strong>{analytics.total_points}</strong><p>累计强度 {analytics.total_intensity} · {analytics.total_records} 条记录</p><small>点击查看项目分布</small></button>
             <article className="stat-card credit-card"><span><Star />项目学分</span><strong>{analytics.total_credits}</strong><small>学分</small><p>{analytics.completed_projects} 个已完成项目</p></article>
           </section>
           <StudyTrend analytics={analytics} projects={projects} />
           <StudyHeatmap initialDays={analytics.heatmap} projects={projects} today={today} />
           <PointDistributionDialog
             analytics={analytics}
-            scope={pointDistribution}
-            onClose={() => setPointDistribution(null)}
-            onRedeem={() => { setPointDistribution(null); setRedemptionOpen(true); }}
+            scope={pointsDialog === "week" || pointsDialog === "total" ? pointsDialog : null}
+            onClose={() => setPointsDialog(null)}
+            onRedeem={() => setPointsDialog("redemption")}
           />
-          <PointRedemptionDialog open={redemptionOpen} onClose={() => setRedemptionOpen(false)} onRedeemed={() => void refreshAnalytics()} />
+          <PointRedemptionDialog open={pointsDialog === "redemption"} onClose={() => setPointsDialog(null)} onRedeemed={() => void refreshAnalytics()} />
         </TabsContent>
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">全部积累</p><h1>历史记录</h1><p className="page-description">共 {historyTotal} 条学习记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p></div>
-            <div className="header-actions">
+            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条学习记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目和学习记录可在删除后 7 天内恢复。</p>}</div>
+            {historySection === "records" ? <div className="header-actions">
               <a className="export-button" href="/api/export?format=csv" download><Download />导出 CSV</a>
               <a className="export-button" href="/api/export?format=json" download><Download />导出 JSON</a>
               <RecordEditor today={today} projects={projects} onSaved={saveRecord} />
-            </div>
+            </div> : null}
           </header>
+          <div className="history-sections" role="tablist" aria-label="历史记录分类">
+            <button type="button" role="tab" aria-selected={historySection === "records"} className={historySection === "records" ? "active" : ""} onClick={() => setHistorySection("records")}><History />学习记录</button>
+            <button type="button" role="tab" aria-selected={historySection === "trash"} className={historySection === "trash" ? "active" : ""} onClick={() => setHistorySection("trash")}><Trash2 />回收站</button>
+          </div>
+          {historySection === "records" ? <>
           <div className="history-filters">
             <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索学习记录" />{query ? <span>{historyTotal} 条结果</span> : null}</div>
             <Select value={projectFilter} onValueChange={setProjectFilter}>
@@ -1528,6 +1534,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
             {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
           </section>
+          </> : <TrashView active={view === "history" && historySection === "trash"} revision={historyRevision} onRestored={restoreTrash} />}
         </TabsContent>
 
         <TabsContent value="projects" className="view-content">
@@ -1538,19 +1545,12 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} onReorder={reorderProjectCards} />
         </TabsContent>
 
-        <TabsContent value="trash" className="view-content">
-          <header className="topbar history-header">
-            <div><p className="section-kicker">RECOVERY</p><h1>回收站</h1><p className="page-description">项目和学习记录可在删除后 7 天内恢复。</p></div>
-          </header>
-          <TrashView active={view === "trash"} revision={historyRevision} onRestored={restoreTrash} />
-        </TabsContent>
       </main>
 
       <TabsList className="mobile-nav">
         <TabsTrigger value="dashboard"><LayoutDashboard />今日</TabsTrigger>
         <TabsTrigger value="history"><History />历史</TabsTrigger>
         <TabsTrigger value="projects"><FolderKanban />项目</TabsTrigger>
-        <TabsTrigger value="trash"><Trash2 />回收站</TabsTrigger>
       </TabsList>
       <Toaster position="top-center" richColors />
     </Tabs>
