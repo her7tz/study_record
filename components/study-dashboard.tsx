@@ -639,10 +639,12 @@ function PointDistributionDialog({
         ) : (
           <div className="points-empty"><FolderKanban /><p>该周期还没有归入项目的积分。</p></div>
         )}
-        <DialogFooter className="points-dialog-footer">
-          <p>积分兑换会从可用余额中扣除，不影响学习记录与项目学分。</p>
-          <Button onClick={onRedeem}><Star />兑换积分</Button>
-        </DialogFooter>
+        {scope === "total" ? (
+          <DialogFooter className="points-dialog-footer">
+            <p>积分兑换会从可用余额中扣除，不影响学习记录与项目学分。</p>
+            <Button type="button" onClick={onRedeem}><Star />兑换积分</Button>
+          </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
