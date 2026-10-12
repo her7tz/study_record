@@ -1741,8 +1741,9 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
           <span><small>学习账户</small><strong title={user.email}>{user.email}</strong></span>
-          <a href="/signout-with-chatgpt?return_to=/" aria-label="退出登录"><LogOut /></a>
+          <a href="/api/auth/logout" aria-label="退出登录"><LogOut /></a>
         </div>
+        <a className="account-email-link" href="/account/email">绑定备用邮箱</a>
       </aside>
 
       <main className="main-content">

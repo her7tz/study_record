@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/app/chatgpt-auth";
 import { todayString } from "@/lib/date";
 import { getHeatmapData, getStudyAnalytics } from "@/lib/study-analytics";
 
@@ -9,7 +9,7 @@ function jsonError(message: string, status: number) {
 }
 
 export async function GET(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     const params = new URL(request.url).searchParams;

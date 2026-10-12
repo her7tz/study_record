@@ -75,3 +75,28 @@ export const projectDependencies = sqliteTable(
     index("idx_project_dependencies_target").on(table.userId, table.toProjectId),
   ],
 );
+
+export const emailIdentities = sqliteTable(
+  "email_identities",
+  {
+    email: text("email").primaryKey(),
+    userId: text("user_id").notNull().unique(),
+    verifiedAt: text("verified_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+);
+
+export const emailLoginCodes = sqliteTable(
+  "email_login_codes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    purpose: text("purpose").notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    sentAt: text("sent_at").notNull(),
+    windowStartedAt: text("window_started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    sendCount: integer("send_count").notNull().default(0),
+  },
+  (table) => [uniqueIndex("idx_email_login_codes_email_purpose").on(table.email, table.purpose)],
+);

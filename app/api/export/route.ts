@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/app/chatgpt-auth";
 import { todayString } from "@/lib/date";
 import { getExportData } from "@/lib/export-data";
 
@@ -10,7 +10,7 @@ function csvCell(value: string | number | null) {
 }
 
 export async function GET(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
   const format = new URL(request.url).searchParams.get("format") || "csv";
   if (format !== "csv" && format !== "json") return Response.json({ error: "请选择 CSV 或 JSON 格式。" }, { status: 400 });

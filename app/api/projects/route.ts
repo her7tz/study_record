@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/app/chatgpt-auth";
 import {
   editProject,
   insertProject,
@@ -35,7 +35,7 @@ function readProjectInput(payload: Partial<StudyProjectInput>): StudyProjectInpu
 }
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     return Response.json({ projects: await listProjects(user.userId) });
@@ -46,7 +46,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     const input = readProjectInput(await request.json());
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     const payload = (await request.json()) as Partial<StudyProjectInput> & { id?: number };
@@ -82,7 +82,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     const payload = (await request.json()) as { project_ids?: unknown };
@@ -99,7 +99,7 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!Number.isInteger(id) || id < 1) return jsonError("找不到要删除的项目。", 400);

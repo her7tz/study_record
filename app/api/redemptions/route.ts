@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/app/chatgpt-auth";
 import {
   createPointRedemption,
   listPointRedemptions,
@@ -12,7 +12,7 @@ function jsonError(message: string, status: number) {
 }
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     return Response.json(await listPointRedemptions(user.userId));
@@ -23,7 +23,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     const payload = (await request.json()) as { reward_name?: unknown; points?: unknown };
