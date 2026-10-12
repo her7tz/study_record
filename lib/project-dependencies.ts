@@ -25,9 +25,9 @@ export async function listProjectDependencies(userId: string): Promise<ProjectDe
   }));
 }
 
-export async function replaceProjectDependencies(userId: string, projectId: number, prerequisiteIds: number[]) {
+export async function replaceProjectDependencies(userId: string, projectId: number, prerequisiteIds: number[], isFoundation: boolean) {
   const db = database();
-  if (prerequisiteIds.length > 100 || prerequisiteIds.some((id) => !Number.isInteger(id) || id < 1) || new Set(prerequisiteIds).size !== prerequisiteIds.length || prerequisiteIds.includes(projectId)) {
+  if (!Array.isArray(prerequisiteIds) || typeof isFoundation !== "boolean" || prerequisiteIds.length > 100 || prerequisiteIds.some((id) => !Number.isInteger(id) || id < 1) || new Set(prerequisiteIds).size !== prerequisiteIds.length || prerequisiteIds.includes(projectId) || (isFoundation && prerequisiteIds.length > 0)) {
     return { ok: false as const, reason: "前置项目列表无效。" };
   }
 
@@ -76,6 +76,7 @@ export async function replaceProjectDependencies(userId: string, projectId: numb
 
   await db.batch([
     db.prepare("DELETE FROM project_dependencies WHERE user_id = ? AND to_project_id = ?").bind(userId, projectId),
+    db.prepare("UPDATE projects SET is_foundation = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND deleted_at IS NULL").bind(isFoundation ? 1 : 0, projectId, userId),
     ...prerequisiteIds.map((fromProjectId) => db.prepare(
       "INSERT INTO project_dependencies (user_id, from_project_id, to_project_id) VALUES (?, ?, ?)",
     ).bind(userId, fromProjectId, projectId)),

@@ -24,7 +24,7 @@ export function validateProject(input: StudyProjectInput) {
 export async function listProjects(userId: string) {
   const result = await database()
     .prepare(
-      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance, p.sort_order,
+      `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance, p.is_foundation, p.sort_order,
               COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
               COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
               COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
@@ -37,7 +37,7 @@ export async function listProjects(userId: string) {
     )
     .bind(userId)
     .all<StudyProject>();
-  return result.results;
+  return result.results.map((project) => ({ ...project, is_foundation: Boolean(project.is_foundation) }));
 }
 
 export async function insertProject(userId: string, input: StudyProjectInput) {
@@ -49,11 +49,11 @@ export async function insertProject(userId: string, input: StudyProjectInput) {
     .prepare(
       `INSERT INTO projects (user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order, created_at, updated_at`,
+       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, is_foundation, sort_order, created_at, updated_at`,
     )
     .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, Number(nextOrder?.next_order || 0))
     .first<Omit<StudyProject, "record_count" | "average_intensity" | "total_intensity" | "total_points">>();
-  return project ? { ...project, record_count: 0, average_intensity: null, total_intensity: 0, total_points: 0 } : null;
+  return project ? { ...project, is_foundation: Boolean(project.is_foundation), record_count: 0, average_intensity: null, total_intensity: 0, total_points: 0 } : null;
 }
 
 export async function editProject(userId: string, id: number, input: StudyProjectInput) {
@@ -63,13 +63,13 @@ export async function editProject(userId: string, id: number, input: StudyProjec
       `UPDATE projects
        SET name = ?, description = ?, goal = ?, status = ?, start_date = ?, target_date = ?, color = ?, importance = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ? AND deleted_at IS NULL
-       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, sort_order, created_at, updated_at`,
+       RETURNING id, user_id, name, description, goal, status, start_date, target_date, color, importance, is_foundation, sort_order, created_at, updated_at`,
     )
     .bind(input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, id, userId)
     .first<{ id: number }>();
   if (!updated) return null;
-  return db.prepare(
-    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance, p.sort_order,
+  const project = await db.prepare(
+    `SELECT p.id, p.user_id, p.name, p.description, p.goal, p.status, p.start_date, p.target_date, p.color, p.importance, p.is_foundation, p.sort_order,
             COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
             COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
             COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
@@ -79,6 +79,7 @@ export async function editProject(userId: string, id: number, input: StudyProjec
      WHERE p.id = ? AND p.user_id = ? AND p.deleted_at IS NULL
      GROUP BY p.id`,
   ).bind(id, userId).first<StudyProject>();
+  return project ? { ...project, is_foundation: Boolean(project.is_foundation) } : null;
 }
 
 export async function reorderProjects(userId: string, projectIds: number[]) {
