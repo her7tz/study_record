@@ -196,6 +196,11 @@ button { cursor: pointer; }
 .trend-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .trend-heading h2 { margin: 0; font-size: 1.15rem; letter-spacing: -.02em; }
 .trend-heading small { display: block; margin-top: 4px; color: #8a94a5; font-size: .68rem; }
+.trend-controls { display: flex; align-items: center; gap: 12px; }
+.trend-metric-switch { display: inline-flex; padding: 3px; border: 1px solid #e2e8f1; border-radius: 10px; background: #f4f6fa; }
+.trend-metric-switch button { min-height: 30px; padding: 5px 11px; border: 0; border-radius: 7px; background: transparent; color: #748198; font: inherit; font-size: .72rem; cursor: pointer; }
+.trend-metric-switch button[aria-pressed="true"] { background: white; color: #2254d1; box-shadow: 0 1px 3px #1c2c491a; font-weight: 700; }
+.trend-metric-switch button:focus-visible { outline: 2px solid #7196f1; outline-offset: 2px; }
 .trend-summary { display: flex; align-items: center; gap: 9px; }
 .trend-summary span { padding: 5px 9px; border-radius: 999px; background: #eef2f7; color: #6d798d; font-size: .72rem; }
 .trend-summary strong { color: #23314a; }
@@ -529,6 +534,7 @@ button { cursor: pointer; }
   .stats-grid .stat-card:last-child { grid-column: 1 / -1; }
   .trend-card { padding: 19px 16px 14px; }
   .trend-heading { align-items: flex-start; flex-direction: column; }
+  .trend-controls { width: 100%; justify-content: space-between; gap: 8px; }
   .trend-summary { width: 100%; justify-content: space-between; }
   .trend-chart { height: 200px; }
   .points-distribution { grid-template-columns: 1fr; justify-items: center; }

@@ -114,6 +114,7 @@ const statusLabels: Record<ProjectStatus, string> = {
 };
 const trendConfig = {
   total_points: { label: "积分", color: "#2254d1" },
+  total_intensity: { label: "强度", color: "#14867f" },
 } satisfies ChartConfig;
 const pointDistributionConfig = {
   points: { label: "积分", color: "#2254d1" },
@@ -480,13 +481,15 @@ function RecordList({
 }
 
 function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projects: StudyProject[] }) {
+  const [metric, setMetric] = useState<"total_points" | "total_intensity">("total_points");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedRecords, setSelectedRecords] = useState<StudyRecord[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const activeDays = analytics.trend.filter((day) => day.count > 0).length;
   const recent = analytics.trend.slice(-7);
   const previous = analytics.trend.slice(0, 7);
-  const total = (days: StudyAnalytics["trend"]) => days.reduce((sum, day) => sum + day.total_points, 0);
+  const metricLabel = metric === "total_points" ? "积分" : "强度";
+  const total = (days: StudyAnalytics["trend"]) => days.reduce((sum, day) => sum + day[metric], 0);
   const change = total(recent) - total(previous);
 
   async function openSources(date: string) {
@@ -511,13 +514,13 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
         cx={cx}
         cy={cy}
         r={5}
-        fill="var(--color-total_points)"
+        fill={`var(--color-${metric})`}
         stroke="white"
         strokeWidth={2}
         className="trend-data-point"
         role="button"
         tabIndex={0}
-        aria-label={`${payload.date}，${payload.total_points} 积分，查看积分来源`}
+        aria-label={`${payload.date}，${payload[metric]} ${metricLabel}，查看当天记录来源`}
         onClick={() => void openSources(payload.date)}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") void openSources(payload.date);
@@ -530,18 +533,24 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
     <>
       <section className="trend-card" aria-labelledby="trend-title">
         <div className="trend-heading">
-          <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天积分趋势</h2><small>点击数据点查看积分来源</small></div>
-          <div className="trend-summary">
-            <span><strong>{activeDays}</strong> 个学习日</span>
-            <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change} 较前 7 天</span>
+          <div><p className="section-kicker"><TrendingUp />TREND</p><h2 id="trend-title">近 14 天{metricLabel}趋势</h2><small>点击数据点查看当天记录来源</small></div>
+          <div className="trend-controls">
+            <div className="trend-metric-switch" role="group" aria-label="趋势指标">
+              <button type="button" aria-pressed={metric === "total_points"} onClick={() => setMetric("total_points")}>积分</button>
+              <button type="button" aria-pressed={metric === "total_intensity"} onClick={() => setMetric("total_intensity")}>强度</button>
+            </div>
+            <div className="trend-summary">
+              <span><strong>{activeDays}</strong> 个学习日</span>
+              <span className={change > 0 ? "up" : change < 0 ? "down" : "steady"}>{change > 0 ? "+" : ""}{change} {metricLabel} · 较前 7 天</span>
+            </div>
           </div>
         </div>
         <ChartContainer config={trendConfig} className="trend-chart" initialDimension={{ width: 760, height: 220 }}>
           <AreaChart data={analytics.trend} margin={{ top: 12, right: 10, left: -22, bottom: 0 }}>
             <defs>
               <linearGradient id="intensity-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--color-total_points)" stopOpacity={0.32} />
-                <stop offset="100%" stopColor="var(--color-total_points)" stopOpacity={0.02} />
+                <stop offset="0%" stopColor={`var(--color-${metric})`} stopOpacity={0.32} />
+                <stop offset="100%" stopColor={`var(--color-${metric})`} stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 5" />
@@ -549,9 +558,9 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
             <YAxis domain={[0, "auto"]} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
             <ChartTooltip
               cursor={{ stroke: "#9db4f0", strokeDasharray: "3 3" }}
-              content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">积分 {Number(value)}</span>} />}
+              content={<ChartTooltipContent labelFormatter={(_, payload) => String(payload[0]?.payload?.date || "")} formatter={(value) => <span className="trend-tooltip-value">{metricLabel} {Number(value)}</span>} />}
             />
-            <Area type="monotone" dataKey="total_points" stroke="var(--color-total_points)" strokeWidth={2.5} fill="url(#intensity-fill)" dot={renderTrendDot} activeDot={false} />
+            <Area type="monotone" dataKey={metric} stroke={`var(--color-${metric})`} strokeWidth={2.5} fill="url(#intensity-fill)" dot={renderTrendDot} activeDot={false} />
           </AreaChart>
         </ChartContainer>
       </section>
@@ -559,7 +568,7 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
         <DialogContent className="heatmap-dialog sm:max-w-[520px]">
           <DialogHeader>
             <p className="section-kicker">POINT SOURCES</p>
-            <DialogTitle>{selectedDate ? `${formatStudyDate(selectedDate)} · 积分来源` : "积分来源"}</DialogTitle>
+            <DialogTitle>{selectedDate ? `${formatStudyDate(selectedDate)} · 学习记录来源` : "学习记录来源"}</DialogTitle>
             <DialogDescription>{loadingSources ? "正在读取…" : `${selectedRecords.length} 条学习记录`}</DialogDescription>
           </DialogHeader>
           {loadingSources ? <div className="heatmap-day-empty"><p>加载中…</p></div> : selectedRecords.length ? (
@@ -575,7 +584,7 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
                 );
               })}
             </div>
-          ) : <div className="heatmap-day-empty"><p>这一天没有积分来源。</p></div>}
+          ) : <div className="heatmap-day-empty"><p>这一天没有学习记录。</p></div>}
         </DialogContent>
       </Dialog>
     </>
