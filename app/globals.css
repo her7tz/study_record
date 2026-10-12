@@ -151,37 +151,6 @@ button { cursor: pointer; }
 .account-card a { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; color: #70809b; }
 .account-card a:hover { background: rgba(255,255,255,.07); color: white; }
 .account-card svg { width: 16px; }
-.account-email-link { position: relative; z-index: 1; display: block; margin: 7px 0 0 45px; color: #8fa3c5; font-size: .72rem; text-decoration: none; }
-.account-email-link:hover { color: #c8e8f0; }
-
-.auth-page { display: grid; min-height: 100svh; place-items: center; padding: 24px; }
-.auth-card { width: min(100%, 460px); padding: 36px; border: 1px solid #dce2eb; border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: 0 24px 80px rgba(18,32,56,.11); }
-.privacy-card { width: min(100%, 760px); max-height: calc(100svh - 48px); overflow-y: auto; padding: 38px; border: 1px solid #dce2eb; border-radius: 18px; background: rgba(255,255,255,.96); box-shadow: 0 24px 80px rgba(18,32,56,.11); }
-.privacy-card h1 { margin: 0 0 18px; font-size: 2rem; letter-spacing: -.04em; }
-.privacy-card h2 { margin: 26px 0 5px; font-size: 1rem; }
-.privacy-card p { color: #647188; font-size: .88rem; line-height: 1.8; }
-.privacy-card .section-kicker { margin-bottom: 5px; color: #2254d1; }
-.auth-brand { display: flex; flex-direction: column; gap: 2px; margin-bottom: 38px; color: #142038; font-size: 1.1rem; font-weight: 800; letter-spacing: .08em; text-decoration: none; }
-.auth-brand span { color: #8491a6; font-size: .62rem; letter-spacing: .2em; }
-.auth-card .section-kicker { margin-bottom: 5px; }
-.auth-card h1 { margin: 0; font-size: 2rem; letter-spacing: -.04em; }
-.auth-description { margin: 12px 0 22px; color: #69758a; font-size: .88rem; line-height: 1.7; }
-.email-auth-form { display: grid; gap: 10px; }
-.email-auth-form label { margin-top: 5px; color: #34425a; font-size: .8rem; font-weight: 700; }
-.email-auth-form input { width: 100%; min-height: 48px; padding: 0 13px; border: 1px solid #d6dde8; border-radius: 9px; outline: none; background: #fbfcfe; color: #142038; }
-.email-auth-form input:focus { border-color: #4774e2; box-shadow: 0 0 0 3px rgba(34,84,209,.12); }
-.email-auth-form input:disabled { color: #69758a; }
-.email-auth-form > button, .email-auth-actions button { min-height: 46px; padding: 0 16px; border: 0; border-radius: 9px; background: #2254d1; color: white; font-weight: 700; }
-.email-auth-form button:disabled { cursor: wait; opacity: .55; }
-.email-auth-actions { display: flex; gap: 9px; }
-.email-auth-actions button:first-child { flex: 1; }
-.email-auth-actions .email-auth-secondary { border: 1px solid #dce2eb; background: white; color: #536077; font-size: .8rem; }
-.email-auth-message, .email-auth-error { margin: 3px 0 0; font-size: .77rem; line-height: 1.5; }
-.email-auth-message { color: #23734d; }
-.email-auth-error { color: #b63b4a; }
-.auth-footnote { margin: 18px 0 0; color: #8994a6; font-size: .75rem; line-height: 1.7; }
-.auth-footnote a { color: #2254d1; text-decoration: none; }
-.auth-footnote a:hover { text-decoration: underline; }
 
 .main-content { width: calc(100% - 256px); min-height: 100svh; margin-left: 256px; padding: 50px clamp(30px, 5vw, 72px) 56px; }
 .view-content { width: min(1240px, 100%); margin: 0 auto; }
@@ -548,10 +517,6 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 540px) {
-  .auth-page { padding: 15px; }
-  .auth-card { padding: 27px 22px; }
-  .privacy-card { max-height: calc(100svh - 30px); padding: 27px 22px; }
-  .auth-brand { margin-bottom: 28px; }
   .main-content { padding-inline: 15px; }
   .mobile-nav [data-slot="tabs-trigger"] { gap: 4px; padding-inline: 4px; font-size: .7rem; }
   .mobile-nav [data-slot="tabs-trigger"] svg { width: 16px; }

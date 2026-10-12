@@ -1,5 +1,4 @@
-import { getAppUser } from "@/app/chatgpt-auth";
-import { redirect } from "next/navigation";
+import { requireChatGPTUser } from "@/app/chatgpt-auth";
 import { StudyDashboard } from "@/components/study-dashboard";
 import { todayString } from "@/lib/date";
 import { listRecords, type StudyRecord } from "@/lib/study-records";
@@ -11,8 +10,7 @@ import { listProjectDependencies, type ProjectDependency } from "@/lib/project-d
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const user = await getAppUser();
-  if (!user) redirect("/login");
+  const user = await requireChatGPTUser("/");
   let records: StudyRecord[] = [];
   let projects: StudyProject[] = [];
   let projectDependencies: ProjectDependency[] = [];

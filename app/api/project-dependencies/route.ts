@@ -1,4 +1,4 @@
-import { getAppUser } from "@/app/chatgpt-auth";
+import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { listProjectDependencies, replaceProjectDependencies } from "@/lib/project-dependencies";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ function jsonError(message: string, status: number) {
 }
 
 export async function GET() {
-  const user = await getAppUser();
+  const user = await getChatGPTUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     return Response.json({ dependencies: await listProjectDependencies(user.userId) });
@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const user = await getAppUser();
+  const user = await getChatGPTUser();
   if (!user) return jsonError("请先登录。", 401);
   try {
     const payload = (await request.json()) as { project_id?: unknown; prerequisite_ids?: unknown; is_foundation?: unknown };

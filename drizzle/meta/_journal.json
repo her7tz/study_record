@@ -71,20 +71,6 @@
       "when": 1791771385641,
       "tag": "0009_burly_fixer",
       "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1791773561061,
-      "tag": "0010_email_fallback_auth",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1791773825562,
-      "tag": "0011_email_auth_rate_limit",
-      "breakpoints": true
     }
   ]
 }

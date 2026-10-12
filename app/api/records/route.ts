@@ -1,4 +1,4 @@
-import { getAppUser } from "@/app/chatgpt-auth";
+import { getChatGPTUser } from "@/app/chatgpt-auth";
 import {
   editRecord,
   insertRecord,
@@ -15,7 +15,7 @@ function jsonError(message: string, status: number) {
 }
 
 async function requireApiUser() {
-  return getAppUser();
+  return getChatGPTUser();
 }
 
 async function readInput(request: Request): Promise<StudyRecordInput> {
