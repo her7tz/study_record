@@ -64,6 +64,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
+import { ProjectExperiments } from "@/components/project-experiments";
 import { formatStudyDate } from "@/lib/date";
 import type { PointRedemption } from "@/lib/point-redemptions";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
@@ -369,7 +370,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
       });
       setItems((current) => current.filter((entry) => `${entry.kind}:${entry.id}` !== key));
       onRestored();
-      toast.success(item.kind === "project" ? "项目及关联记录已恢复" : "学习记录已恢复");
+      toast.success(item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "学习记录已恢复");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "恢复失败，请稍后再试。");
     } finally {
@@ -388,9 +389,9 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
             return (
               <article className="trash-item" key={key}>
                 <div className="trash-item-copy">
-                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : "学习记录"}</span>
+                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : "学习记录"}</span>
                   <h2>{item.title}</h2>
-                  {item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : <p>{item.record_count} 条关联记录会随项目一起恢复</p>}
+                  {item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : item.kind === "experiment" ? <p>{item.project_name} · 强度 {item.intensity_score} · {item.status === "todo" ? "待做" : "已完成"}</p> : <p>{item.record_count} 条记录、{item.experiment_count} 个实验会随项目一起恢复</p>}
                   <small>恢复期限至 {deadline}</small>
                 </div>
                 <Button type="button" variant="outline" onClick={() => void restore(item)} disabled={restoringId !== null}>
@@ -401,7 +402,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
           })}
         </div>
       ) : (
-        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目和学习记录会显示在这里。</p></div>
+        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验和学习记录会显示在这里。</p></div>
       )}
     </section>
   );
@@ -1303,6 +1304,7 @@ function ProjectGraph({
   dependencies,
   onDependenciesChange,
   onFoundationChanged,
+  onExperimentCountsChange,
   onSaved,
   onDeleted,
   onView,
@@ -1311,6 +1313,7 @@ function ProjectGraph({
   dependencies: ProjectDependency[];
   onDependenciesChange: (dependencies: ProjectDependency[]) => void;
   onFoundationChanged: (projectId: number, isFoundation: boolean) => void;
+  onExperimentCountsChange: (projectId: number, total: number, todo: number) => void;
   onSaved: (project: StudyProject) => void;
   onDeleted: (id: number) => void;
   onView: (id: number) => void;
@@ -1367,6 +1370,7 @@ function ProjectGraph({
               <div className="project-graph-node-bottom">
                 <ProjectDependencyEditor project={project} projects={projects} dependencies={dependencies} onSaved={onDependenciesChange} onFoundationChanged={onFoundationChanged} compact />
                 <small>{project.is_foundation ? "最基础" : prerequisites ? `${prerequisites} 个前置项目` : "无前置依赖"}</small>
+                <ProjectExperiments project={project} compact onCountsChange={onExperimentCountsChange} />
                 <button type="button" className="project-view" onClick={() => onView(project.id)}>查看记录 <ChevronRight /></button>
               </div>
             </article>
@@ -1382,6 +1386,7 @@ function ProjectBoard({
   dependencies,
   onDependenciesChange,
   onFoundationChanged,
+  onExperimentCountsChange,
   onSaved,
   onDeleted,
   onView,
@@ -1391,6 +1396,7 @@ function ProjectBoard({
   dependencies: ProjectDependency[];
   onDependenciesChange: (dependencies: ProjectDependency[]) => void;
   onFoundationChanged: (projectId: number, isFoundation: boolean) => void;
+  onExperimentCountsChange: (projectId: number, total: number, todo: number) => void;
   onSaved: (project: StudyProject) => void;
   onDeleted: (id: number) => void;
   onView: (id: number) => void;
@@ -1464,6 +1470,7 @@ function ProjectBoard({
           <span><strong>{totalPoints}</strong> 积分</span>
         </div>
         {project.status === "completed" ? <div className="project-credit"><Star />已获得 {project.importance} 学分</div> : null}
+        <ProjectExperiments project={project} onCountsChange={onExperimentCountsChange} />
         <button type="button" className="project-view" onClick={() => onView(project.id)}>查看项目记录 <ChevronRight /></button>
       </article>
     );
@@ -1493,7 +1500,7 @@ function ProjectBoard({
       {boardMode === "graph" ? (
         <>
           {!dependencies.length ? <p className="project-graph-empty-hint">目前还没有依赖连线。可以单独指定“最基础”项目，也可以设置前置项目。</p> : null}
-          <ProjectGraph projects={projects} dependencies={dependencies} onDependenciesChange={onDependenciesChange} onFoundationChanged={onFoundationChanged} onSaved={onSaved} onDeleted={onDeleted} onView={onView} />
+          <ProjectGraph projects={projects} dependencies={dependencies} onDependenciesChange={onDependenciesChange} onFoundationChanged={onFoundationChanged} onExperimentCountsChange={onExperimentCountsChange} onSaved={onSaved} onDeleted={onDeleted} onView={onView} />
         </>
       ) : groups.map((group) => group.projects.length ? (
         <section className="project-group" key={group.key}>
@@ -1521,6 +1528,12 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   const [historyTotalPoints, setHistoryTotalPoints] = useState(initialAnalytics.total_points);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
+
+  const updateExperimentCounts = useCallback((projectId: number, total: number, todo: number) => {
+    setProjects((current) => current.map((project) => project.id === projectId
+      ? { ...project, experiment_count: total, experiment_todo_count: todo }
+      : project));
+  }, []);
 
   const refreshAnalytics = useCallback(async () => {
     try {
@@ -1830,6 +1843,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             dependencies={projectDependencies}
             onDependenciesChange={setProjectDependencies}
             onFoundationChanged={(projectId, isFoundation) => setProjects((current) => current.map((project) => project.id === projectId ? { ...project, is_foundation: isFoundation } : project))}
+            onExperimentCountsChange={updateExperimentCounts}
             onSaved={saveProject}
             onDeleted={deleteProject}
             onView={viewProject}

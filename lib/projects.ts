@@ -28,6 +28,8 @@ export async function listProjects(userId: string) {
               COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
               COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
               COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
+              (SELECT COUNT(*) FROM project_experiments e WHERE e.project_id = p.id AND e.user_id = p.user_id AND e.deleted_at IS NULL) AS experiment_count,
+              (SELECT COUNT(*) FROM project_experiments e WHERE e.project_id = p.id AND e.user_id = p.user_id AND e.deleted_at IS NULL AND e.status = 'todo') AS experiment_todo_count,
               p.created_at, p.updated_at
        FROM projects p
        LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at IS NULL
@@ -53,7 +55,7 @@ export async function insertProject(userId: string, input: StudyProjectInput) {
     )
     .bind(userId, input.name, input.description, input.goal, input.status, input.start_date, input.target_date, input.color, input.importance, Number(nextOrder?.next_order || 0))
     .first<Omit<StudyProject, "record_count" | "average_intensity" | "total_intensity" | "total_points">>();
-  return project ? { ...project, is_foundation: Boolean(project.is_foundation), record_count: 0, average_intensity: null, total_intensity: 0, total_points: 0 } : null;
+  return project ? { ...project, is_foundation: Boolean(project.is_foundation), record_count: 0, average_intensity: null, total_intensity: 0, total_points: 0, experiment_count: 0, experiment_todo_count: 0 } : null;
 }
 
 export async function editProject(userId: string, id: number, input: StudyProjectInput) {
@@ -73,6 +75,8 @@ export async function editProject(userId: string, id: number, input: StudyProjec
             COUNT(r.id) AS record_count, AVG(r.intensity_score) AS average_intensity,
             COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
             COALESCE(SUM(r.intensity_score * p.importance), 0) AS total_points,
+            (SELECT COUNT(*) FROM project_experiments e WHERE e.project_id = p.id AND e.user_id = p.user_id AND e.deleted_at IS NULL) AS experiment_count,
+            (SELECT COUNT(*) FROM project_experiments e WHERE e.project_id = p.id AND e.user_id = p.user_id AND e.deleted_at IS NULL AND e.status = 'todo') AS experiment_todo_count,
             p.created_at, p.updated_at
      FROM projects p
      LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at IS NULL
@@ -103,6 +107,7 @@ export async function removeProject(userId: string, id: number, deletedAt: strin
   if (!owned) return false;
   await db.batch([
     db.prepare("UPDATE study_records SET deleted_at = ? WHERE project_id = ? AND user_id = ? AND deleted_at IS NULL").bind(deletedAt, id, userId),
+    db.prepare("UPDATE project_experiments SET deleted_at = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND user_id = ? AND deleted_at IS NULL").bind(deletedAt, id, userId),
     db.prepare("UPDATE projects SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL").bind(deletedAt, id, userId),
   ]);
   return true;

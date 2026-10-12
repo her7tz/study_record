@@ -40,6 +40,18 @@ export type ExportRedemption = {
   created_at: string;
 };
 
+export type ExportExperiment = {
+  id: number;
+  project_id: number;
+  project_name: string;
+  name: string;
+  intensity_score: number;
+  status: "todo" | "done";
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function database() {
   if (!env.DB) throw new Error("学习记录数据库暂时不可用。");
   return env.DB;
@@ -47,7 +59,7 @@ function database() {
 
 export async function getExportData(userId: string) {
   const db = database();
-  const [projectResult, redemptionResult] = await Promise.all([db.prepare(
+  const [projectResult, redemptionResult, experimentResult] = await Promise.all([db.prepare(
     `SELECT p.id, p.name, p.description, p.goal, p.status, p.importance, p.start_date, p.target_date, p.color,
             COUNT(r.id) AS record_count,
             COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
@@ -64,7 +76,14 @@ export async function getExportData(userId: string) {
      FROM point_redemptions
      WHERE user_id = ?
      ORDER BY created_at DESC, id DESC`,
-  ).bind(userId).all<ExportRedemption>()]);
+  ).bind(userId).all<ExportRedemption>(), db.prepare(
+    `SELECT e.id, e.project_id, p.name AS project_name, e.name, e.intensity_score, e.status,
+            e.completed_at, e.created_at, e.updated_at
+     FROM project_experiments e
+     JOIN projects p ON p.id = e.project_id AND p.user_id = e.user_id AND p.deleted_at IS NULL
+     WHERE e.user_id = ? AND e.deleted_at IS NULL
+     ORDER BY p.sort_order, e.sort_order, e.id`,
+  ).bind(userId).all<ExportExperiment>()]);
 
   const records: ExportRecord[] = [];
   const pageSize = 500;
@@ -103,17 +122,26 @@ export async function getExportData(userId: string) {
     ...redemption,
     points: Number(redemption.points),
   }));
+  const experiments = experimentResult.results.map((experiment) => ({
+    ...experiment,
+    project_id: Number(experiment.project_id),
+    intensity_score: Number(experiment.intensity_score),
+  }));
   const totalPoints = normalizedRecords.reduce((sum, record) => sum + record.points, 0);
   const redeemedPoints = redemptions.reduce((sum, redemption) => sum + redemption.points, 0);
 
   return {
     projects,
     records: normalizedRecords,
+    experiments,
     redemptions,
     summary: {
       total_projects: projects.length,
       completed_projects: projects.filter((project) => project.status === "completed").length,
       total_records: normalizedRecords.length,
+      total_experiments: experiments.length,
+      todo_experiments: experiments.filter((experiment) => experiment.status === "todo").length,
+      completed_experiments: experiments.filter((experiment) => experiment.status === "done").length,
       total_intensity: normalizedRecords.reduce((sum, record) => sum + record.intensity_score, 0),
       total_points: totalPoints,
       redeemed_points: redeemedPoints,

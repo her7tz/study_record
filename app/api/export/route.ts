@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const data = await getExportData(user.userId);
     const date = todayString();
     if (format === "json") {
-      return new Response(JSON.stringify({ version: 2, exported_at: new Date().toISOString(), ...data }), {
+      return new Response(JSON.stringify({ version: 3, exported_at: new Date().toISOString(), ...data }), {
         headers: {
           "content-type": "application/json; charset=utf-8",
           "content-disposition": `attachment; filename="study-log-${date}.json"`,
@@ -42,6 +42,19 @@ export async function GET(request: Request) {
       record.created_at,
       record.updated_at,
     ]);
+    const experimentRows = data.experiments.map((experiment) => [
+      "项目实验",
+      experiment.created_at.slice(0, 10),
+      experiment.name,
+      experiment.project_name,
+      "",
+      experiment.status === "todo" ? "待做" : "已完成",
+      experiment.intensity_score,
+      "",
+      "",
+      experiment.created_at,
+      experiment.updated_at,
+    ]);
     const redemptionRows = data.redemptions.map((redemption) => [
       "积分兑换",
       redemption.created_at.slice(0, 10),
@@ -55,7 +68,7 @@ export async function GET(request: Request) {
       redemption.created_at,
       "",
     ]);
-    const csv = `\uFEFF${[headers, ...recordRows, ...redemptionRows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+    const csv = `\uFEFF${[headers, ...recordRows, ...experimentRows, ...redemptionRows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
     return new Response(csv, {
       headers: {
         "content-type": "text/csv; charset=utf-8",

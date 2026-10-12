@@ -75,3 +75,23 @@ export const projectDependencies = sqliteTable(
     index("idx_project_dependencies_target").on(table.userId, table.toProjectId),
   ],
 );
+
+export const projectExperiments = sqliteTable(
+  "project_experiments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    intensityScore: integer("intensity_score").notNull().default(3),
+    status: text("status").notNull().default("todo"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    deletedAt: text("deleted_at"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("idx_project_experiments_user_project").on(table.userId, table.projectId, table.deletedAt, table.status, table.sortOrder),
+  ],
+);

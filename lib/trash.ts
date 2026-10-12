@@ -19,9 +19,21 @@ export type TrashProject = {
   deleted_at: string;
   expires_at: string;
   record_count: number;
+  experiment_count: number;
 };
 
-export type TrashItem = TrashRecord | TrashProject;
+export type TrashExperiment = {
+  kind: "experiment";
+  id: number;
+  title: string;
+  deleted_at: string;
+  expires_at: string;
+  project_name: string;
+  intensity_score: number;
+  status: "todo" | "done";
+};
+
+export type TrashItem = TrashRecord | TrashProject | TrashExperiment;
 
 function database() {
   if (!env.DB) throw new Error("回收站暂时不可用。");
@@ -40,6 +52,7 @@ async function purgeExpired(userId: string) {
   const db = database();
   const cutoff = cutoffDate();
   await db.batch([
+    db.prepare("DELETE FROM project_experiments WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
     db.prepare("DELETE FROM study_records WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
     db.prepare("DELETE FROM projects WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
   ]);
@@ -49,7 +62,7 @@ export async function listTrash(userId: string): Promise<TrashItem[]> {
   await purgeExpired(userId);
   const db = database();
   const cutoff = cutoffDate();
-  const [records, projects] = await Promise.all([
+  const [records, projects, experiments] = await Promise.all([
     db.prepare(
       `SELECT r.id, r.subject AS title, r.study_date, r.deleted_at, p.name AS project_name
        FROM study_records r
@@ -63,24 +76,44 @@ export async function listTrash(userId: string): Promise<TrashItem[]> {
        ORDER BY r.deleted_at DESC, r.id DESC`,
     ).bind(userId, cutoff).all<Omit<TrashRecord, "kind" | "expires_at">>(),
     db.prepare(
-      `SELECT p.id, p.name AS title, p.deleted_at, COUNT(r.id) AS record_count
+      `SELECT p.id, p.name AS title, p.deleted_at, COUNT(DISTINCT r.id) AS record_count,
+              (SELECT COUNT(*) FROM project_experiments e WHERE e.project_id = p.id AND e.user_id = p.user_id AND e.deleted_at = p.deleted_at) AS experiment_count
        FROM projects p
        LEFT JOIN study_records r ON r.project_id = p.id AND r.user_id = p.user_id AND r.deleted_at = p.deleted_at
        WHERE p.user_id = ? AND p.deleted_at IS NOT NULL AND p.deleted_at >= ?
        GROUP BY p.id
        ORDER BY p.deleted_at DESC, p.id DESC`,
     ).bind(userId, cutoff).all<Omit<TrashProject, "kind" | "expires_at">>(),
+    db.prepare(
+      `SELECT e.id, e.name AS title, e.deleted_at, e.intensity_score, e.status, p.name AS project_name
+       FROM project_experiments e
+       JOIN projects p ON p.id = e.project_id AND p.user_id = e.user_id AND p.deleted_at IS NULL
+       WHERE e.user_id = ? AND e.deleted_at IS NOT NULL AND e.deleted_at >= ?
+       ORDER BY e.deleted_at DESC, e.id DESC`,
+    ).bind(userId, cutoff).all<Omit<TrashExperiment, "kind" | "expires_at">>(),
   ]);
 
   return [
     ...records.results.map((record) => ({ ...record, kind: "record" as const, expires_at: expiryDate(record.deleted_at) })),
-    ...projects.results.map((project) => ({ ...project, kind: "project" as const, record_count: Number(project.record_count), expires_at: expiryDate(project.deleted_at) })),
+    ...projects.results.map((project) => ({ ...project, kind: "project" as const, record_count: Number(project.record_count), experiment_count: Number(project.experiment_count), expires_at: expiryDate(project.deleted_at) })),
+    ...experiments.results.map((experiment) => ({ ...experiment, kind: "experiment" as const, intensity_score: Number(experiment.intensity_score), expires_at: expiryDate(experiment.deleted_at) })),
   ].sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
 }
 
-export async function restoreTrashItem(userId: string, kind: "record" | "project", id: number) {
+export async function restoreTrashItem(userId: string, kind: "record" | "project" | "experiment", id: number) {
   const db = database();
   const cutoff = cutoffDate();
+  if (kind === "experiment") {
+    const result = await db.prepare(
+      `UPDATE project_experiments SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?
+         AND EXISTS (
+           SELECT 1 FROM projects p WHERE p.id = project_experiments.project_id AND p.user_id = project_experiments.user_id
+             AND p.deleted_at IS NULL
+         )`,
+    ).bind(id, userId, cutoff).run();
+    return result.meta.changes > 0;
+  }
   if (kind === "record") {
     const result = await db.prepare(
       `UPDATE study_records SET deleted_at = NULL
@@ -101,6 +134,7 @@ export async function restoreTrashItem(userId: string, kind: "record" | "project
   const results = await db.batch([
     db.prepare("UPDATE projects SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at = ?").bind(id, userId, deletedAt),
     db.prepare("UPDATE study_records SET deleted_at = NULL WHERE project_id = ? AND user_id = ? AND deleted_at = ?").bind(id, userId, deletedAt),
+    db.prepare("UPDATE project_experiments SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND user_id = ? AND deleted_at = ?").bind(id, userId, deletedAt),
   ]);
   return Number(results[0]?.meta.changes || 0) > 0;
 }
