@@ -59,3 +59,18 @@ export const pointRedemptions = sqliteTable(
   },
   (table) => [index("idx_point_redemptions_user_created").on(table.userId, table.createdAt)],
 );
+
+export const projectDependencies = sqliteTable(
+  "project_dependencies",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    fromProjectId: integer("from_project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    toProjectId: integer("to_project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("idx_project_dependencies_edge").on(table.userId, table.fromProjectId, table.toProjectId),
+    index("idx_project_dependencies_target").on(table.userId, table.toProjectId),
+  ],
+);

@@ -13,6 +13,7 @@ import {
   Flame,
   FolderKanban,
   Gauge,
+  GitBranch,
   History,
   LayoutDashboard,
   LogOut,
@@ -67,6 +68,7 @@ import { formatStudyDate } from "@/lib/date";
 import type { PointRedemption } from "@/lib/point-redemptions";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
 import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
+import type { ProjectDependency } from "@/lib/project-dependencies";
 import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
 import type { TrashItem } from "@/lib/trash";
 
@@ -75,6 +77,7 @@ type DashboardProps = {
   initialRecordTotal: number;
   initialAnalytics: StudyAnalytics;
   initialProjects: StudyProject[];
+  initialProjectDependencies: ProjectDependency[];
   today: string;
   user: { displayName: string; email: string };
   loadError: string;
@@ -151,6 +154,7 @@ async function requestJson(url: string, init: RequestInit) {
     redemptions?: PointRedemption[];
     available_points?: number;
     heatmap?: HeatmapDay[];
+    dependencies?: ProjectDependency[];
     items?: TrashItem[];
   };
   if (!response.ok) throw new Error(payload.error || "操作失败，请稍后再试。");
@@ -1127,20 +1131,214 @@ function DeleteProject({ project, onDeleted }: { project: StudyProject; onDelete
   );
 }
 
+function ProjectDependencyEditor({
+  project,
+  projects,
+  dependencies,
+  onSaved,
+  compact = false,
+}: {
+  project: StudyProject;
+  projects: StudyProject[];
+  dependencies: ProjectDependency[];
+  onSaved: (dependencies: ProjectDependency[]) => void;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  function begin() {
+    setSelected(dependencies.filter((edge) => edge.to_project_id === project.id).map((edge) => edge.from_project_id));
+    setOpen(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const result = await requestJson("/api/project-dependencies", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id: project.id, prerequisite_ids: selected }),
+      });
+      onSaved(result.dependencies || []);
+      setOpen(false);
+      toast.success("项目依赖已更新");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "依赖关系保存失败，请稍后再试。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const candidates = projects.filter((item) => item.id !== project.id);
+  const count = dependencies.filter((edge) => edge.to_project_id === project.id).length;
+
+  return (
+    <>
+      {compact ? (
+        <button className="record-action" type="button" onClick={begin} aria-label={`编辑 ${project.name} 的前置项目`} title="设置前置项目"><GitBranch /></button>
+      ) : <Button type="button" variant="outline" onClick={begin}><GitBranch />前置项目 · {count}</Button>}
+      <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
+        <DialogContent className="record-dialog dependency-dialog sm:max-w-[520px]">
+          <DialogHeader>
+            <p className="section-kicker">PROJECT DEPENDENCIES</p>
+            <DialogTitle>设置“{project.name}”的前置项目</DialogTitle>
+            <DialogDescription>箭头从前置项目指向当前项目；前置项目完成后，再推进当前项目。</DialogDescription>
+          </DialogHeader>
+          {candidates.length ? (
+            <div className="dependency-options">
+              {candidates.map((candidate) => (
+                <label key={candidate.id}>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(candidate.id)}
+                    onChange={(event) => setSelected((current) => event.target.checked
+                      ? [...current, candidate.id]
+                      : current.filter((id) => id !== candidate.id))}
+                  />
+                  <span className={`dependency-color project-${candidate.color}`} />
+                  <span>{candidate.name}</span>
+                  <small>{statusLabels[candidate.status]}</small>
+                </label>
+              ))}
+            </div>
+          ) : <div className="points-empty dependency-empty"><FolderKanban /><p>至少创建两个项目后才能建立依赖。</p></div>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>取消</Button>
+            <Button type="button" onClick={() => void save()} disabled={saving || !candidates.length}>{saving ? "保存中…" : "保存依赖"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+type ProjectGraphNode = {
+  project: StudyProject;
+  x: number;
+  y: number;
+};
+
+function layoutProjectGraph(projects: StudyProject[], dependencies: ProjectDependency[]) {
+  const byId = new Map(projects.map((project) => [project.id, project]));
+  const outgoing = new Map<number, number[]>();
+  const indegree = new Map(projects.map((project) => [project.id, 0]));
+  for (const edge of dependencies) {
+    if (!byId.has(edge.from_project_id) || !byId.has(edge.to_project_id)) continue;
+    outgoing.set(edge.from_project_id, [...(outgoing.get(edge.from_project_id) || []), edge.to_project_id]);
+    indegree.set(edge.to_project_id, (indegree.get(edge.to_project_id) || 0) + 1);
+  }
+
+  const depth = new Map(projects.map((project) => [project.id, 0]));
+  const queue = projects.filter((project) => indegree.get(project.id) === 0).sort((a, b) => a.sort_order - b.sort_order).map((project) => project.id);
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const next of outgoing.get(current) || []) {
+      depth.set(next, Math.max(depth.get(next) || 0, (depth.get(current) || 0) + 1));
+      const remaining = (indegree.get(next) || 0) - 1;
+      indegree.set(next, remaining);
+      if (remaining === 0) queue.push(next);
+    }
+  }
+
+  const layers = new Map<number, StudyProject[]>();
+  for (const project of projects) {
+    const layer = depth.get(project.id) || 0;
+    layers.set(layer, [...(layers.get(layer) || []), project]);
+  }
+  for (const layer of layers.values()) layer.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+  const nodes: ProjectGraphNode[] = [];
+  for (const [layerIndex, layer] of [...layers.entries()].sort((a, b) => a[0] - b[0])) {
+    layer.forEach((project, rowIndex) => nodes.push({ project, x: 36 + layerIndex * 340, y: 38 + rowIndex * 206 }));
+  }
+  const width = Math.max(760, (Math.max(...layers.keys()) + 1) * 340 + 36);
+  const height = Math.max(350, Math.max(...[...layers.values()].map((layer) => layer.length)) * 206 + 28);
+  return { nodes, width, height };
+}
+
+function ProjectGraph({
+  projects,
+  dependencies,
+  onDependenciesChange,
+  onSaved,
+  onDeleted,
+  onView,
+}: {
+  projects: StudyProject[];
+  dependencies: ProjectDependency[];
+  onDependenciesChange: (dependencies: ProjectDependency[]) => void;
+  onSaved: (project: StudyProject) => void;
+  onDeleted: (id: number) => void;
+  onView: (id: number) => void;
+}) {
+  const graph = layoutProjectGraph(projects, dependencies);
+  const positions = new Map(graph.nodes.map((node) => [node.project.id, node]));
+  const edges = dependencies.flatMap((edge) => {
+    const source = positions.get(edge.from_project_id);
+    const target = positions.get(edge.to_project_id);
+    if (!source || !target) return [];
+    const startX = source.x + 262;
+    const startY = source.y + 80;
+    const endX = target.x;
+    const endY = target.y + 80;
+    const curveX = Math.max(48, (endX - startX) * 0.46);
+    return [{ ...edge, path: `M ${startX} ${startY} C ${startX + curveX} ${startY}, ${endX - curveX} ${endY}, ${endX} ${endY}` }];
+  });
+
+  return (
+    <div className="project-graph-scroll" aria-label="项目依赖有向图">
+      <div className="project-graph-canvas" style={{ width: graph.width, height: graph.height }}>
+        <svg className="project-graph-edges" width={graph.width} height={graph.height} aria-hidden="true">
+          <defs><marker id="project-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+          {edges.map((edge) => <path key={`${edge.from_project_id}-${edge.to_project_id}`} d={edge.path} markerEnd="url(#project-arrow)" />)}
+        </svg>
+        {graph.nodes.map(({ project, x, y }) => {
+          const prerequisites = dependencies.filter((edge) => edge.to_project_id === project.id).length;
+          return (
+            <article className={`project-graph-node project-${project.color}`} key={project.id} style={{ left: x, top: y }}>
+              <div className="project-graph-node-top">
+                <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
+                <span className="project-importance"><Star />{project.importance}</span>
+                <div className="record-actions">
+                  <ProjectEditor project={project} compact onSaved={onSaved} />
+                  <DeleteProject project={project} onDeleted={onDeleted} />
+                </div>
+              </div>
+              <h2 title={project.name}>{project.name}</h2>
+              <p>{project.goal || project.description || "尚未设置项目目标"}</p>
+              <div className="project-graph-node-bottom">
+                <ProjectDependencyEditor project={project} projects={projects} dependencies={dependencies} onSaved={onDependenciesChange} compact />
+                <small>{prerequisites ? `${prerequisites} 个前置项目` : "起始项目"}</small>
+                <button type="button" className="project-view" onClick={() => onView(project.id)}>查看记录 <ChevronRight /></button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProjectBoard({
   projects,
+  dependencies,
+  onDependenciesChange,
   onSaved,
   onDeleted,
   onView,
   onReorder,
 }: {
   projects: StudyProject[];
+  dependencies: ProjectDependency[];
+  onDependenciesChange: (dependencies: ProjectDependency[]) => void;
   onSaved: (project: StudyProject) => void;
   onDeleted: (id: number) => void;
   onView: (id: number) => void;
   onReorder: (projects: StudyProject[]) => void;
 }) {
   const [sortMode, setSortMode] = useState("manual");
+  const [boardMode, setBoardMode] = useState<"graph" | "cards">("graph");
   if (!projects.length) {
     return (
       <div className="empty-state project-empty">
@@ -1215,17 +1413,30 @@ function ProjectBoard({
   return (
     <div className="project-board">
       <div className="project-toolbar">
-        <div><strong>按完成状态分类</strong><span>每类项目可独立查看和手动排序</span></div>
-        <Select value={sortMode} onValueChange={setSortMode}>
-          <SelectTrigger className="project-sort" aria-label="项目排序方式"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="manual">自主排序</SelectItem>
-            <SelectItem value="time">按时间排序</SelectItem>
-            <SelectItem value="importance">按重要度排序</SelectItem>
-          </SelectContent>
-        </Select>
+        <div><strong>{boardMode === "graph" ? "项目依赖有向图" : "按完成状态分类"}</strong><span>{boardMode === "graph" ? "箭头从前置项目指向后续项目；用节点上的分支按钮设置依赖" : "每类项目可独立查看和手动排序"}</span></div>
+        <div className="project-toolbar-actions">
+          <div className="project-view-switch" role="group" aria-label="项目视图">
+            <button type="button" className={boardMode === "graph" ? "active" : ""} aria-pressed={boardMode === "graph"} onClick={() => setBoardMode("graph")}><GitBranch />关系图</button>
+            <button type="button" className={boardMode === "cards" ? "active" : ""} aria-pressed={boardMode === "cards"} onClick={() => setBoardMode("cards")}><FolderKanban />项目卡片</button>
+          </div>
+          {boardMode === "cards" ? (
+            <Select value={sortMode} onValueChange={setSortMode}>
+              <SelectTrigger className="project-sort" aria-label="项目排序方式"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">自主排序</SelectItem>
+                <SelectItem value="time">按时间排序</SelectItem>
+                <SelectItem value="importance">按重要度排序</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+        </div>
       </div>
-      {groups.map((group) => group.projects.length ? (
+      {boardMode === "graph" ? (
+        <>
+          {!dependencies.length ? <p className="project-graph-empty-hint">目前还没有依赖连线。编辑节点的前置项目，即可建立项目路径。</p> : null}
+          <ProjectGraph projects={projects} dependencies={dependencies} onDependenciesChange={onDependenciesChange} onSaved={onSaved} onDeleted={onDeleted} onView={onView} />
+        </>
+      ) : groups.map((group) => group.projects.length ? (
         <section className="project-group" key={group.key}>
           <div className="project-group-heading"><h2>{group.title}</h2><span>{group.projects.length} 个项目</span></div>
           <div className="project-grid">{group.projects.map((project, index) => renderProject(project, index, group.projects.length))}</div>
@@ -1235,8 +1446,9 @@ function ProjectBoard({
   );
 }
 
-export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnalytics, initialProjects, today, user, loadError }: DashboardProps) {
+export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnalytics, initialProjects, initialProjectDependencies, today, user, loadError }: DashboardProps) {
   const [projects, setProjects] = useState(initialProjects);
+  const [projectDependencies, setProjectDependencies] = useState(initialProjectDependencies);
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [pointsDialog, setPointsDialog] = useState<PointDistributionScope | "redemption" | null>(null);
   const [view, setView] = useState("dashboard");
@@ -1269,11 +1481,21 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
     }
   }, []);
 
+  const refreshProjectDependencies = useCallback(async () => {
+    try {
+      const result = await requestJson("/api/project-dependencies", { method: "GET" });
+      if (result.dependencies) setProjectDependencies(result.dependencies);
+    } catch {
+      // Keep the existing graph edges until the next successful refresh.
+    }
+  }, []);
+
   const restoreTrash = useCallback(() => {
     setHistoryRevision((current) => current + 1);
     void refreshAnalytics();
     void refreshProjects();
-  }, [refreshAnalytics, refreshProjects]);
+    void refreshProjectDependencies();
+  }, [refreshAnalytics, refreshProjects, refreshProjectDependencies]);
 
   const saveRecord: (record: StudyRecord) => void = useCallback(() => {
     setHistoryRevision((current) => current + 1);
@@ -1544,7 +1766,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             <div><p className="section-kicker">PROJECTS</p><h1>学习项目</h1></div>
             <ProjectEditor onSaved={saveProject} />
           </header>
-          <ProjectBoard projects={projects} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} onReorder={reorderProjectCards} />
+          <ProjectBoard projects={projects} dependencies={projectDependencies} onDependenciesChange={setProjectDependencies} onSaved={saveProject} onDeleted={deleteProject} onView={viewProject} onReorder={reorderProjectCards} />
         </TabsContent>
 
       </main>

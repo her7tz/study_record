@@ -57,6 +57,13 @@
       "when": 1791599343119,
       "tag": "0007_brainy_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791769381334,
+      "tag": "0008_modern_nuke",
+      "breakpoints": true
     }
   ]
 }
