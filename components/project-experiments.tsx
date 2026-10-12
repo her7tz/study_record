@@ -26,8 +26,6 @@ type ExperimentList = {
   experiment_todo_count: number;
 };
 
-const intensityChoices = [1, 2, 3, 4, 5];
-
 export function ProjectExperiments({
   project,
   compact = false,
@@ -167,7 +165,7 @@ export function ProjectExperiments({
           <DialogHeader>
             <p className="section-kicker">EXPERIMENTS</p>
             <DialogTitle>{project.name} · 实验待做</DialogTitle>
-            <DialogDescription>记录想验证的实验，完成后可以标记为已完成；强度范围为 1–5。</DialogDescription>
+            <DialogDescription>记录想验证的实验，完成后可以标记为已完成；强度填写正整数，不设上限。</DialogDescription>
           </DialogHeader>
           <form className="experiment-form" onSubmit={submit}>
             <div className="form-row">
@@ -182,14 +180,16 @@ export function ProjectExperiments({
               />
             </div>
             <div className="form-row">
-              <div className="label-line"><Label>实验强度</Label><span>{intensityScore} / 5</span></div>
-              <div className="experiment-intensity" role="group" aria-label="实验强度">
-                {intensityChoices.map((score) => (
-                  <button key={score} type="button" aria-pressed={intensityScore === score} onClick={() => setIntensityScore(score)}>
-                    <Gauge />{score}
-                  </button>
-                ))}
-              </div>
+              <div className="label-line"><Label htmlFor={`experiment-intensity-${project.id}`}>实验强度</Label><span>正整数</span></div>
+              <Input
+                id={`experiment-intensity-${project.id}`}
+                type="number"
+                min={1}
+                step={1}
+                value={intensityScore}
+                onChange={(event) => setIntensityScore(Number(event.target.value))}
+                required
+              />
             </div>
             <div className="experiment-form-actions">
               {editingId ? <Button type="button" variant="outline" onClick={resetForm} disabled={saving}>取消编辑</Button> : null}

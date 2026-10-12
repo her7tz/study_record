@@ -44,20 +44,34 @@ export function ProjectExperimentHistory({
     setRevision((current) => current + 1);
   }
 
+  const todoItems = items.filter((item) => item.status === "todo");
+  const doneItems = items.filter((item) => item.status === "done");
+
+  function renderItems(rows: ProjectExperiment[]) {
+    return rows.map((item) => (
+      <article className={`project-experiment-history-item ${item.status}`} key={item.id}>
+        {item.status === "done" ? <CheckCircle2 aria-label="已完成" /> : <Circle aria-label="待做" />}
+        <div><strong>{item.name}</strong><span><Gauge />强度 {item.intensity_score}{item.status === "done" ? ` · 完成日期 ${item.completed_at?.slice(0, 10) || "—"}` : ""}</span></div>
+      </article>
+    ));
+  }
+
   return (
     <section className="project-experiment-history" aria-labelledby={`project-experiment-history-${project.id}`}>
       <div className="project-experiment-history-heading">
-        <div><p className="section-kicker"><FlaskConical />EXPERIMENTS</p><h2 id={`project-experiment-history-${project.id}`}>实验记录</h2></div>
+        <div><p className="section-kicker"><FlaskConical />EXPERIMENTS</p><h2 id={`project-experiment-history-${project.id}`}>待做实验列表</h2></div>
         <ProjectExperiments project={project} compact onCountsChange={refreshCounts} />
       </div>
       {loading ? <div className="project-experiment-history-empty">正在读取实验…</div> : items.length ? (
-        <div className="project-experiment-history-list">
-          {items.map((item) => (
-            <article className={`project-experiment-history-item ${item.status}`} key={item.id}>
-              {item.status === "done" ? <CheckCircle2 aria-label="已完成" /> : <Circle aria-label="待做" />}
-              <div><strong>{item.name}</strong><span><Gauge />强度 {item.intensity_score}{item.status === "done" ? ` · 完成日期 ${item.completed_at?.slice(0, 10) || "—"}` : " · 待做"}</span></div>
-            </article>
-          ))}
+        <div className="project-experiment-history-groups">
+          <section className="project-experiment-history-group">
+            <h3>待做实验<span>{todoItems.length}</span></h3>
+            {todoItems.length ? <div className="project-experiment-history-list">{renderItems(todoItems)}</div> : <p className="project-experiment-history-note">暂无待做实验。</p>}
+          </section>
+          {doneItems.length ? <section className="project-experiment-history-group">
+            <h3>已完成实验<span>{doneItems.length}</span></h3>
+            <div className="project-experiment-history-list">{renderItems(doneItems)}</div>
+          </section> : null}
         </div>
       ) : <div className="project-experiment-history-empty"><FlaskConical /><p>还没有实验记录。</p></div>}
     </section>

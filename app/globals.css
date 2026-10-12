@@ -368,6 +368,10 @@ button { cursor: pointer; }
 .project-experiment-history-heading h2 { margin: 0; font-size: 1.12rem; }
 .project-experiment-history-heading .project-experiment-link { flex: none; padding: 7px 9px; border: 1px solid #e0e6ef; border-radius: 8px; background: white; }
 .project-experiment-history-heading .project-experiment-link small { display: none; }
+.project-experiment-history-groups { display: grid; gap: 18px; }
+.project-experiment-history-group { display: grid; gap: 8px; }
+.project-experiment-history-group h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: #526077; font-size: .76rem; }
+.project-experiment-history-group h3 span { display: grid; min-width: 19px; height: 19px; place-items: center; border-radius: 999px; background: #eef2f7; color: #68758a; font-size: .62rem; }
 .project-experiment-history-list { display: grid; gap: 8px; }
 .project-experiment-history-item { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid #e5e9f0; border-radius: 9px; background: #fff; }
 .project-experiment-history-item > svg { width: 17px; flex: none; margin-top: 1px; color: #8792a3; }
@@ -380,6 +384,7 @@ button { cursor: pointer; }
 .project-experiment-history-empty { display: grid; min-height: 150px; place-items: center; align-content: center; gap: 8px; color: #8792a3; }
 .project-experiment-history-empty svg { width: 23px; }
 .project-experiment-history-empty p { margin: 0; font-size: .78rem; }
+.project-experiment-history-note { margin: 0; padding: 13px; border: 1px dashed #e0e6ef; border-radius: 9px; color: #8792a3; font-size: .76rem; }
 
 .record-dialog { border-radius: 16px; padding: 25px; }
 .record-dialog [data-slot="dialog-title"] { font-size: 1.65rem; letter-spacing: -.035em; }
@@ -509,10 +514,6 @@ button { cursor: pointer; }
 .project-experiment-link small { color: #8490a2; font-size: .62rem; font-weight: 600; }
 .experiment-dialog { max-height: min(88vh, 760px); overflow-y: auto; border-radius: 16px; padding: 24px; }
 .experiment-form { display: grid; gap: 13px; margin-top: 4px; }
-.experiment-intensity { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
-.experiment-intensity button { display: flex; min-height: 38px; align-items: center; justify-content: center; gap: 5px; border: 1px solid #dfe5ef; border-radius: 8px; background: white; color: #8490a2; font-size: .76rem; font-weight: 750; cursor: pointer; }
-.experiment-intensity button svg { width: 14px; }
-.experiment-intensity button[aria-pressed="true"] { border-color: #2254d1; background: #eef3ff; color: #2254d1; box-shadow: inset 0 0 0 1px #2254d1; }
 .experiment-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .experiment-form-actions button { gap: 6px; }
 .experiment-form-actions button svg { width: 15px; }

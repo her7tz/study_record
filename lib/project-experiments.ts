@@ -8,7 +8,7 @@ function database() {
 
 export function validateProjectExperiment(name: string, intensityScore: number, status?: string) {
   if (!name.trim() || name.trim().length > 80) return "实验名称需填写且不超过 80 个字。";
-  if (!Number.isInteger(intensityScore) || intensityScore < 1 || intensityScore > 5) return "实验强度需为 1–5。";
+  if (!Number.isSafeInteger(intensityScore) || intensityScore < 1) return "实验强度需为正整数。";
   if (status !== undefined && !projectExperimentStatuses.includes(status as ProjectExperimentStatus)) return "请选择有效的实验状态。";
   return null;
 }
