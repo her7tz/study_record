@@ -3,6 +3,7 @@ import {
   editProjectExperiment,
   insertProjectExperiment,
   listProjectExperiments,
+  listTodoProjectExperiments,
   removeProjectExperiment,
   validateProjectExperiment,
 } from "@/lib/project-experiments";
@@ -30,7 +31,16 @@ async function readBody(request: Request) {
 export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return jsonError("请先登录。", 401);
-  const projectId = positiveId(new URL(request.url).searchParams.get("project_id"));
+  const projectIdValue = new URL(request.url).searchParams.get("project_id");
+  if (projectIdValue === null) {
+    try {
+      return Response.json(await listTodoProjectExperiments(user.userId));
+    } catch (error) {
+      console.error("project-experiments:list-todo", error);
+      return jsonError("暂时无法读取待做实验。", 503);
+    }
+  }
+  const projectId = positiveId(projectIdValue);
   if (!projectId) return jsonError("项目编号无效。", 400);
   try {
     const result = await listProjectExperiments(user.userId, projectId);

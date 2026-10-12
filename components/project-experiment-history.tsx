@@ -1,79 +1,52 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Circle, FlaskConical, Gauge } from "lucide-react";
-import { ProjectExperiments } from "@/components/project-experiments";
-import type { ProjectExperiment, StudyProject } from "@/lib/project-model";
+import { Circle, FlaskConical, Gauge } from "lucide-react";
+import type { ProjectExperiment } from "@/lib/project-model";
 
 type ExperimentList = {
-  experiments: ProjectExperiment[];
+  experiments: Array<ProjectExperiment & { project_name: string }>;
   experiment_count: number;
   experiment_todo_count: number;
 };
 
-export function ProjectExperimentHistory({
-  project,
-  onCountsChange,
-}: {
-  project: StudyProject;
-  onCountsChange: (projectId: number, total: number, todo: number) => void;
-}) {
-  const [items, setItems] = useState<ProjectExperiment[]>([]);
+export function ProjectExperimentHistory() {
+  const [items, setItems] = useState<ExperimentList["experiments"]>([]);
   const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    void fetch(`/api/project-experiments?project_id=${project.id}`, { signal: controller.signal })
+    void fetch("/api/project-experiments", { signal: controller.signal })
       .then(async (response) => {
         const result = await response.json() as ExperimentList & { error?: string };
         if (!response.ok) throw new Error(result.error || "实验列表加载失败。");
         setItems(result.experiments || []);
-        onCountsChange(project.id, result.experiment_count, result.experiment_todo_count);
       })
       .catch(() => {
         if (!controller.signal.aborted) setItems([]);
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [onCountsChange, project.id, revision]);
+  }, []);
 
-  function refreshCounts(projectId: number, total: number, todo: number) {
-    onCountsChange(projectId, total, todo);
-    setRevision((current) => current + 1);
-  }
-
-  const todoItems = items.filter((item) => item.status === "todo");
-  const doneItems = items.filter((item) => item.status === "done");
-
-  function renderItems(rows: ProjectExperiment[]) {
+  function renderItems(rows: ExperimentList["experiments"]) {
     return rows.map((item) => (
-      <article className={`project-experiment-history-item ${item.status}`} key={item.id}>
-        {item.status === "done" ? <CheckCircle2 aria-label="已完成" /> : <Circle aria-label="待做" />}
-        <div><strong>{item.name}</strong><span><Gauge />强度 {item.intensity_score}{item.status === "done" ? ` · 完成日期 ${item.completed_at?.slice(0, 10) || "—"}` : ""}</span></div>
+      <article className="project-experiment-history-item" key={item.id}>
+        <Circle aria-label="待做" />
+        <div><strong>{item.name}</strong><span><Gauge />强度 {item.intensity_score} · {item.project_name}</span></div>
       </article>
     ));
   }
 
   return (
-    <section className="project-experiment-history" aria-labelledby={`project-experiment-history-${project.id}`}>
+    <section className="project-experiment-history" aria-labelledby="project-experiment-history-title">
       <div className="project-experiment-history-heading">
-        <div><p className="section-kicker"><FlaskConical />EXPERIMENTS</p><h2 id={`project-experiment-history-${project.id}`}>待做实验列表</h2></div>
-        <ProjectExperiments project={project} compact onCountsChange={refreshCounts} />
+        <div><p className="section-kicker"><FlaskConical />EXPERIMENTS</p><h2 id="project-experiment-history-title">待做实验列表 <span>{items.length}</span></h2></div>
       </div>
       {loading ? <div className="project-experiment-history-empty">正在读取实验…</div> : items.length ? (
-        <div className="project-experiment-history-groups">
-          <section className="project-experiment-history-group">
-            <h3>待做实验<span>{todoItems.length}</span></h3>
-            {todoItems.length ? <div className="project-experiment-history-list">{renderItems(todoItems)}</div> : <p className="project-experiment-history-note">暂无待做实验。</p>}
-          </section>
-          {doneItems.length ? <section className="project-experiment-history-group">
-            <h3>已完成实验<span>{doneItems.length}</span></h3>
-            <div className="project-experiment-history-list">{renderItems(doneItems)}</div>
-          </section> : null}
-        </div>
-      ) : <div className="project-experiment-history-empty"><FlaskConical /><p>还没有实验记录。</p></div>}
+        <div className="project-experiment-history-list">{renderItems(items)}</div>
+      ) : <div className="project-experiment-history-empty"><FlaskConical /><p>当前没有待做实验。</p></div>}
     </section>
   );
 }

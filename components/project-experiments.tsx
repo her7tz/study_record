@@ -217,7 +217,7 @@ export function ProjectExperiments({
                         </button>
                         <div className="experiment-item-copy">
                           <strong>{item.name}</strong>
-                          <span><Gauge />强度 {item.intensity_score}</span>
+                          <span><Gauge />强度 {item.intensity_score}{item.status === "done" ? ` · 完成日期 ${item.completed_at?.slice(0, 10) || "—"}` : ""}</span>
                         </div>
                         <div className="experiment-item-actions">
                           <button type="button" className="record-action" aria-label={`编辑实验 ${item.name}`} onClick={() => edit(item)}><Pencil /></button>

@@ -1836,7 +1836,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
               {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
               {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
             </section>
-            {selectedHistoryProject ? <ProjectExperimentHistory project={selectedHistoryProject} onCountsChange={updateExperimentCounts} /> : null}
+            {selectedHistoryProject ? <ProjectExperimentHistory /> : null}
           </div>
           </> : <TrashView active={view === "history" && historySection === "trash"} revision={historyRevision} onRestored={restoreTrash} />}
         </TabsContent>

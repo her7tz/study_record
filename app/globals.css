@@ -366,6 +366,7 @@ button { cursor: pointer; }
 .project-experiment-history-heading .section-kicker { display: flex; align-items: center; gap: 6px; margin: 0 0 5px; font-size: .62rem; }
 .project-experiment-history-heading .section-kicker svg { width: 13px; }
 .project-experiment-history-heading h2 { margin: 0; font-size: 1.12rem; }
+.project-experiment-history-heading h2 span { display: inline-grid; min-width: 21px; height: 21px; place-items: center; border-radius: 999px; background: #eef2f7; color: #68758a; font-size: .65rem; vertical-align: middle; }
 .project-experiment-history-heading .project-experiment-link { flex: none; padding: 7px 9px; border: 1px solid #e0e6ef; border-radius: 8px; background: white; }
 .project-experiment-history-heading .project-experiment-link small { display: none; }
 .project-experiment-history-groups { display: grid; gap: 18px; }

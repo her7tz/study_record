@@ -40,6 +40,25 @@ export async function listProjectExperiments(userId: string, projectId: number) 
   };
 }
 
+export async function listTodoProjectExperiments(userId: string) {
+  const result = await database().prepare(
+    `SELECT e.id, e.user_id, e.project_id, e.name, e.intensity_score, e.status, e.sort_order,
+            e.completed_at, e.created_at, e.updated_at, p.name AS project_name
+     FROM project_experiments e
+     JOIN projects p ON p.id = e.project_id AND p.user_id = e.user_id AND p.deleted_at IS NULL
+     WHERE e.user_id = ? AND e.deleted_at IS NULL AND e.status = 'todo'
+     ORDER BY p.sort_order, p.id, e.sort_order, e.id`,
+  ).bind(userId).all<ProjectExperiment & { project_name: string }>();
+  const experiments = result.results.map((experiment) => ({
+    ...experiment,
+    id: Number(experiment.id),
+    project_id: Number(experiment.project_id),
+    intensity_score: Number(experiment.intensity_score),
+    sort_order: Number(experiment.sort_order),
+  }));
+  return { experiments, experiment_count: experiments.length, experiment_todo_count: experiments.length };
+}
+
 export async function insertProjectExperiment(userId: string, projectId: number, name: string, intensityScore: number) {
   const db = database();
   const project = await db.prepare(
