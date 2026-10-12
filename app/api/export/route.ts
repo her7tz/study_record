@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const data = await getExportData(user.userId);
     const date = todayString();
     if (format === "json") {
-      return new Response(JSON.stringify({ version: 2, exported_at: new Date().toISOString(), ...data }), {
+      return new Response(JSON.stringify({ version: 1, exported_at: new Date().toISOString(), ...data }), {
         headers: {
           "content-type": "application/json; charset=utf-8",
           "content-disposition": `attachment; filename="study-log-${date}.json"`,
@@ -28,9 +28,8 @@ export async function GET(request: Request) {
       });
     }
 
-    const headers = ["类型", "日期", "学习内容/兑换奖励", "项目", "项目重要度", "项目状态", "强度", "积分变动", "备注", "创建时间", "更新时间"];
-    const recordRows = data.records.map((record) => [
-      "学习记录",
+    const headers = ["日期", "学习内容", "项目", "项目重要度", "项目状态", "强度", "积分", "备注", "创建时间", "更新时间"];
+    const rows = data.records.map((record) => [
       record.study_date,
       record.subject,
       record.project_name,
@@ -42,20 +41,7 @@ export async function GET(request: Request) {
       record.created_at,
       record.updated_at,
     ]);
-    const redemptionRows = data.redemptions.map((redemption) => [
-      "积分兑换",
-      redemption.created_at.slice(0, 10),
-      redemption.reward_name,
-      "",
-      "",
-      "",
-      "",
-      -redemption.points,
-      "",
-      redemption.created_at,
-      "",
-    ]);
-    const csv = `\uFEFF${[headers, ...recordRows, ...redemptionRows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+    const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
     return new Response(csv, {
       headers: {
         "content-type": "text/csv; charset=utf-8",

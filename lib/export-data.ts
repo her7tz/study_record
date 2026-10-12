@@ -33,13 +33,6 @@ export type ExportRecord = {
   updated_at: string;
 };
 
-export type ExportRedemption = {
-  id: number;
-  reward_name: string;
-  points: number;
-  created_at: string;
-};
-
 function database() {
   if (!env.DB) throw new Error("学习记录数据库暂时不可用。");
   return env.DB;
@@ -47,7 +40,7 @@ function database() {
 
 export async function getExportData(userId: string) {
   const db = database();
-  const [projectResult, redemptionResult] = await Promise.all([db.prepare(
+  const projectResult = await db.prepare(
     `SELECT p.id, p.name, p.description, p.goal, p.status, p.importance, p.start_date, p.target_date, p.color,
             COUNT(r.id) AS record_count,
             COALESCE(SUM(r.intensity_score), 0) AS total_intensity,
@@ -59,12 +52,7 @@ export async function getExportData(userId: string) {
      WHERE p.user_id = ? AND p.deleted_at IS NULL
      GROUP BY p.id
      ORDER BY p.updated_at DESC, p.id DESC`,
-  ).bind(userId).all<ExportProject>(), db.prepare(
-    `SELECT id, reward_name, points, created_at
-     FROM point_redemptions
-     WHERE user_id = ?
-     ORDER BY created_at DESC, id DESC`,
-  ).bind(userId).all<ExportRedemption>()]);
+  ).bind(userId).all<ExportProject>();
 
   const records: ExportRecord[] = [];
   const pageSize = 500;
@@ -99,25 +87,16 @@ export async function getExportData(userId: string) {
     intensity_score: Number(record.intensity_score),
     points: Number(record.points),
   }));
-  const redemptions = redemptionResult.results.map((redemption) => ({
-    ...redemption,
-    points: Number(redemption.points),
-  }));
-  const totalPoints = normalizedRecords.reduce((sum, record) => sum + record.points, 0);
-  const redeemedPoints = redemptions.reduce((sum, redemption) => sum + redemption.points, 0);
 
   return {
     projects,
     records: normalizedRecords,
-    redemptions,
     summary: {
       total_projects: projects.length,
       completed_projects: projects.filter((project) => project.status === "completed").length,
       total_records: normalizedRecords.length,
       total_intensity: normalizedRecords.reduce((sum, record) => sum + record.intensity_score, 0),
-      total_points: totalPoints,
-      redeemed_points: redeemedPoints,
-      available_points: Math.max(totalPoints - redeemedPoints, 0),
+      total_points: normalizedRecords.reduce((sum, record) => sum + record.points, 0),
       total_credits: projects.reduce((sum, project) => sum + project.credits, 0),
     },
   };

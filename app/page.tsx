@@ -5,6 +5,7 @@ import { listRecords, type StudyRecord } from "@/lib/study-records";
 import { getStudyAnalytics, type StudyAnalytics } from "@/lib/study-analytics";
 import { listProjects } from "@/lib/projects";
 import type { StudyProject } from "@/lib/project-model";
+import { listProjectDependencies, type ProjectDependency } from "@/lib/project-dependencies";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function Home() {
   const user = await requireChatGPTUser("/");
   let records: StudyRecord[] = [];
   let projects: StudyProject[] = [];
+  let projectDependencies: ProjectDependency[] = [];
   let recordTotal = 0;
   let analytics: StudyAnalytics = {
     total_records: 0,
@@ -38,14 +40,16 @@ export default async function Home() {
   let loadError = "";
 
   try {
-    const [recordPage, loadedProjects, loadedAnalytics] = await Promise.all([
+    const [recordPage, loadedProjects, loadedAnalytics, loadedDependencies] = await Promise.all([
       listRecords(user.userId, { limit: 50 }),
       listProjects(user.userId),
       getStudyAnalytics(user.userId, todayString()),
+      listProjectDependencies(user.userId),
     ]);
     records = recordPage.records;
     recordTotal = recordPage.total;
     projects = loadedProjects;
+    projectDependencies = loadedDependencies;
     analytics = loadedAnalytics;
   } catch (error) {
     console.error("dashboard:load", error);
@@ -58,6 +62,7 @@ export default async function Home() {
       initialRecordTotal={recordTotal}
       initialAnalytics={analytics}
       initialProjects={projects}
+      initialProjectDependencies={projectDependencies}
       today={todayString()}
       user={{ displayName: user.displayName, email: user.email }}
       loadError={loadError}

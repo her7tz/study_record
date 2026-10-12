@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "137e7679-6b0b-4ab5-9d09-e02c7334d952",
-  "prevId": "529c61d6-462a-4000-8bed-4d86c17b6048",
+  "id": "2a5002bf-72cc-4cc7-a421-72addc05db8c",
+  "prevId": "137e7679-6b0b-4ab5-9d09-e02c7334d952",
   "tables": {
     "point_redemptions": {
       "name": "point_redemptions",
@@ -55,6 +55,97 @@
         }
       },
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "project_dependencies": {
+      "name": "project_dependencies",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_project_id": {
+          "name": "from_project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "to_project_id": {
+          "name": "to_project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "idx_project_dependencies_edge": {
+          "name": "idx_project_dependencies_edge",
+          "columns": [
+            "user_id",
+            "from_project_id",
+            "to_project_id"
+          ],
+          "isUnique": true
+        },
+        "idx_project_dependencies_target": {
+          "name": "idx_project_dependencies_target",
+          "columns": [
+            "user_id",
+            "to_project_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "project_dependencies_from_project_id_projects_id_fk": {
+          "name": "project_dependencies_from_project_id_projects_id_fk",
+          "tableFrom": "project_dependencies",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "from_project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_dependencies_to_project_id_projects_id_fk": {
+          "name": "project_dependencies_to_project_id_projects_id_fk",
+          "tableFrom": "project_dependencies",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "to_project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
