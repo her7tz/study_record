@@ -65,6 +65,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectExperiments } from "@/components/project-experiments";
+import { ProjectExperimentHistory } from "@/components/project-experiment-history";
 import { formatStudyDate } from "@/lib/date";
 import type { PointRedemption } from "@/lib/point-redemptions";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
@@ -1741,6 +1742,9 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   }, [saveProject, saveRecord]);
 
   const firstName = user.displayName.includes("@") ? "同学" : user.displayName.split(/\s+/)[0];
+  const selectedHistoryProject = projectFilter !== "all" && projectFilter !== "none"
+    ? projects.find((project) => String(project.id) === projectFilter)
+    : undefined;
 
   return (
     <Tabs value={view} onValueChange={setView} className="app-frame">
@@ -1826,10 +1830,14 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
               </SelectContent>
             </Select>
           </div>
-          <section className="records-section history-records">
-            {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
-            {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
-          </section>
+          <div className={selectedHistoryProject ? "project-history-columns" : ""}>
+            <section className="records-section history-records">
+              {selectedHistoryProject ? <div className="project-experiment-history-heading"><div><p className="section-kicker"><History />PROJECT RECORDS</p><h2>学习记录</h2></div></div> : null}
+              {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
+              {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
+            </section>
+            {selectedHistoryProject ? <ProjectExperimentHistory project={selectedHistoryProject} onCountsChange={updateExperimentCounts} /> : null}
+          </div>
           </> : <TrashView active={view === "history" && historySection === "trash"} revision={historyRevision} onRestored={restoreTrash} />}
         </TabsContent>
 
