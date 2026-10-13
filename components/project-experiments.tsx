@@ -35,7 +35,7 @@ export function ProjectExperiments({
 }: {
   project: StudyProject;
   compact?: boolean;
-  onCountsChange: (projectId: number, total: number, todo: number) => void;
+  onCountsChange: (projectId: number, total: number, todo: number, changed?: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ProjectExperiment[]>([]);
@@ -68,7 +68,7 @@ export function ProjectExperiments({
 
   function applyList(result: ExperimentList) {
     setItems(result.experiments || []);
-    onCountsChange(project.id, result.experiment_count, result.experiment_todo_count);
+    onCountsChange(project.id, result.experiment_count, result.experiment_todo_count, true);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -173,7 +173,7 @@ export function ProjectExperiments({
           <DialogHeader>
             <p className="section-kicker">EXPERIMENTS</p>
             <DialogTitle>{project.name} · 实验</DialogTitle>
-            <DialogDescription>记录想验证的实验，完成后可以标记为已完成；强度填写正整数，不设上限。</DialogDescription>
+            <DialogDescription>完成实验会自动记入历史并计分；强度填写正整数，不设上限。</DialogDescription>
           </DialogHeader>
           <form className="experiment-form" onSubmit={submit}>
             <div className="form-row">

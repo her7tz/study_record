@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { CheckCircle2, Circle, FlaskConical, Gauge } from "lucide-react";
+import { Circle, FlaskConical, Gauge } from "lucide-react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProjectExperiment, ProjectExperimentStatus } from "@/lib/project-model";
@@ -18,14 +18,13 @@ export function ProjectExperimentHistory({ title = "实验目录", onChanged }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
-  const [status, setStatus] = useState<ProjectExperimentStatus>("todo");
   const [busyId, setBusyId] = useState<number | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    void fetch(`/api/project-experiments?status=${status}`, { signal: controller.signal })
+    void fetch("/api/project-experiments?status=todo", { signal: controller.signal })
       .then(async (response) => {
         const result = await response.json() as ExperimentList & { error?: string };
         if (!response.ok) throw new Error(result.error || "实验列表加载失败。");
@@ -36,7 +35,7 @@ export function ProjectExperimentHistory({ title = "实验目录", onChanged }: 
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [retry, status]);
+  }, [retry]);
 
   async function updateStatus(item: ExperimentList["experiments"][number], nextStatus: ProjectExperimentStatus) {
     if (nextStatus === item.status) return;
@@ -69,12 +68,11 @@ export function ProjectExperimentHistory({ title = "实验目录", onChanged }: 
   function renderItems(rows: ExperimentList["experiments"]) {
     return rows.map((item) => (
       <article className={`project-experiment-history-item ${item.status}`} key={item.id}>
-        {item.status === "done" ? <CheckCircle2 aria-label="已完成" /> : <Circle aria-label="待做" />}
+        <Circle aria-label="待做" />
         <div className="experiment-item-copy">
           <strong>{item.name}</strong>
           {item.description ? <p className="experiment-description">{item.description}</p> : null}
           <span><Gauge />强度 {item.intensity_score} · {item.project_name}</span>
-          {item.status === "done" ? <span>完成日期 {item.completed_at?.slice(0, 10) || "—"}</span> : null}
         </div>
         <Select value={item.status} onValueChange={(value) => void updateStatus(item, value as ProjectExperimentStatus)} disabled={busyId !== null || loading}>
           <SelectTrigger className="experiment-status-select" size="sm" aria-label={`${item.name} 的状态`}><SelectValue /></SelectTrigger>
@@ -92,15 +90,11 @@ export function ProjectExperimentHistory({ title = "实验目录", onChanged }: 
       <div className="project-experiment-history-heading">
         <div><h2 id={headingId}>{title} {!loading && !error ? <span>{items.length}</span> : null}</h2></div>
       </div>
-      <div className="history-sections experiment-status-tabs" role="tablist" aria-label="按实验状态查看">
-        <button type="button" role="tab" aria-selected={status === "todo"} className={status === "todo" ? "active" : ""} disabled={busyId !== null} onClick={() => setStatus("todo")}><Circle />待做</button>
-        <button type="button" role="tab" aria-selected={status === "done"} className={status === "done" ? "active" : ""} disabled={busyId !== null} onClick={() => setStatus("done")}><CheckCircle2 />已完成</button>
-      </div>
       {loading ? <div className="project-experiment-history-empty" role="status">正在读取实验…</div> : error ? (
         <div className="project-experiment-history-empty"><p role="alert">{error}</p><button type="button" className="export-button" onClick={() => setRetry((value) => value + 1)}>重试</button></div>
       ) : items.length ? (
         <div className="project-experiment-history-list">{renderItems(items)}</div>
-      ) : <div className="project-experiment-history-empty"><FlaskConical /><p>{status === "todo" ? "当前没有待做实验。" : "当前没有已完成实验。"}</p></div>}
+      ) : <div className="project-experiment-history-empty"><FlaskConical /><p>当前没有待做实验。</p></div>}
     </section>
   );
 }

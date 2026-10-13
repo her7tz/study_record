@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -70,7 +70,7 @@ import { ProjectExperimentHistory } from "@/components/project-experiment-histor
 import { formatStudyDate } from "@/lib/date";
 import type { PointRedemption } from "@/lib/point-redemptions";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
-import type { StudyRecord, StudyRecordInput } from "@/lib/study-records";
+import type { StudyRecord, StudyRecordInput, StudyRecordPage, StudyRecordType } from "@/lib/study-records";
 import type { ProjectDependency } from "@/lib/project-dependencies";
 import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
 import type { TrashItem } from "@/lib/trash";
@@ -131,9 +131,9 @@ const projectChartColors: Record<string, string> = {
   slate: "#52647e",
 };
 
-function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
+function recordInput(record: StudyRecord | null, today: string, defaultType: StudyRecordType = "learning"): StudyRecordInput {
   return {
-    record_type: record?.record_type || "learning",
+    record_type: record?.record_type || defaultType,
     study_date: record?.study_date || today,
     subject: record?.subject || "",
     project_id: record?.project_id ?? null,
@@ -173,19 +173,21 @@ function RecordEditor({
   record = null,
   onSaved,
   compact = false,
+  defaultType = "learning",
 }: {
   today: string;
   projects: StudyProject[];
   record?: StudyRecord | null;
   onSaved: (record: StudyRecord) => void;
   compact?: boolean;
+  defaultType?: StudyRecordType;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [values, setValues] = useState(() => recordInput(record, today));
+  const [values, setValues] = useState(() => recordInput(record, today, defaultType));
 
   function begin() {
-    setValues(recordInput(record, today));
+    setValues(recordInput(record, today, defaultType));
     setOpen(true);
   }
 
@@ -232,7 +234,7 @@ function RecordEditor({
         <form className="record-form" onSubmit={submit}>
           <div className="form-row">
             <Label htmlFor={`record-type-${record?.id || "new"}`}>记录类型</Label>
-            <Select value={values.record_type} onValueChange={(value) => setValues({ ...values, record_type: value as StudyRecordInput["record_type"] })}>
+            <Select disabled={Boolean(record?.experiment_id)} value={values.record_type} onValueChange={(value) => setValues({ ...values, record_type: value as StudyRecordInput["record_type"], intensity_score: value === "learning" ? Math.min(values.intensity_score, 5) : values.intensity_score })}>
               <SelectTrigger id={`record-type-${record?.id || "new"}`}><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="learning">学习</SelectItem><SelectItem value="experiment">实验</SelectItem></SelectContent>
             </Select>
@@ -262,6 +264,7 @@ function RecordEditor({
           <div className="form-row">
             <div className="label-line"><Label>所属项目</Label><span>选填</span></div>
             <Select
+              disabled={Boolean(record?.experiment_id)}
               value={values.project_id === null ? "none" : String(values.project_id)}
               onValueChange={(value) => setValues({ ...values, project_id: value === "none" ? null : Number(value) })}
             >
@@ -273,8 +276,8 @@ function RecordEditor({
             </Select>
           </div>
           <div className="form-row">
-            <div className="label-line"><Label>投入强度</Label><span>{values.intensity_score} / 5 · 可按记录累加</span></div>
-            <div className="intensity-choices" aria-label="投入强度分数">
+            <div className="label-line"><Label>投入强度</Label><span>{values.record_type === "learning" ? `${values.intensity_score} / 5 · 可按记录累加` : "正整数，无上限"}</span></div>
+            {values.record_type === "experiment" ? <Input type="number" min={1} step={1} value={values.intensity_score} aria-label="实验强度" required onChange={(event) => setValues({ ...values, intensity_score: Number(event.target.value) })} /> : <div className="intensity-choices" aria-label="投入强度分数">
               {intensityChoices.map((score) => (
                 <button
                   key={score}
@@ -286,7 +289,7 @@ function RecordEditor({
                   <strong>{score}</strong><span>{score === 1 ? "轻松" : score === 2 ? "适中" : score === 3 ? "专注" : score === 4 ? "高强" : "极限"}</span>
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
           <div className="form-row">
             <div className="label-line"><Label htmlFor={`note-${record?.id || "new"}`}>备注</Label><span>选填</span></div>
@@ -424,20 +427,22 @@ function RecordList({
   today,
   onSaved,
   onDeleted,
+  recordType,
 }: {
   records: StudyRecord[];
   projects: StudyProject[];
   today: string;
   onSaved: (record: StudyRecord) => void;
   onDeleted: (id: number) => void;
+  recordType?: StudyRecordType;
 }) {
   if (!records.length) {
     return (
       <div className="empty-state">
         <span><NotebookPen /></span>
-        <h3>从第一条记录开始</h3>
-        <p>完成一次学习后，把内容和强度记下来。</p>
-        <RecordEditor today={today} projects={projects} onSaved={onSaved} />
+        <h3>{recordType === "experiment" ? "暂无实验记录" : recordType === "learning" ? "暂无学习记录" : "从第一条记录开始"}</h3>
+        <p>把完成的内容和强度记下来。</p>
+        <RecordEditor today={today} projects={projects} onSaved={onSaved} defaultType={recordType} />
       </div>
     );
   }
@@ -477,9 +482,9 @@ function RecordList({
                   <p className={record.note ? "" : "muted"}>{record.note || "没有填写备注"}</p>
                 </div>
                 <div className="record-intensity" aria-label={`投入强度 ${record.intensity_score} 分`}>
-                  <Gauge /><strong>{record.intensity_score}</strong><span>/ 5</span>
+                  <Gauge /><strong>{record.intensity_score}</strong>{record.record_type === "learning" ? <span>/ 5</span> : null}
                   <b>{points} 积分</b>
-                  <div className="intensity-meter" aria-hidden="true">{intensityChoices.map((score) => <i key={score} className={score <= record.intensity_score ? "active" : ""} />)}</div>
+                  {record.record_type === "learning" ? <div className="intensity-meter" aria-hidden="true">{intensityChoices.map((score) => <i key={score} className={score <= record.intensity_score ? "active" : ""} />)}</div> : null}
                 </div>
                 <div className="record-actions">
                   <RecordEditor today={today} projects={projects} record={record} compact onSaved={onSaved} />
@@ -929,7 +934,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
                       {project ? <span className={`project-pill project-${project.color}`}>{project.name}</span> : <span className="day-unclassified">未分类</span>}
                       {record.note ? <p>{record.note}</p> : null}
                     </div>
-                    <strong><Gauge />{record.intensity_score}<small>/5 · {record.intensity_score * Number(project?.importance || 0)} 积分</small></strong>
+                    <strong><Gauge />{record.intensity_score}<small>{record.record_type === "learning" ? "/5 · " : " · "}{record.intensity_score * Number(project?.importance || 0)} 积分</small></strong>
                   </article>
                 );
               })}
@@ -1534,19 +1539,17 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   const [historySection, setHistorySection] = useState<"records" | "trash">("records");
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
-  const [historyRecords, setHistoryRecords] = useState(initialRecords);
-  const [historyTotal, setHistoryTotal] = useState(initialRecordTotal);
-  const [historyAverage, setHistoryAverage] = useState(initialAnalytics.overall_average);
-  const [historyTotalIntensity, setHistoryTotalIntensity] = useState(initialAnalytics.total_intensity);
-  const [historyTotalPoints, setHistoryTotalPoints] = useState(initialAnalytics.total_points);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPages, setHistoryPages] = useState<Record<StudyRecordType, StudyRecordPage>>(() => ({
+    learning: { records: [], total: 0, average_intensity: 0, total_intensity: 0, total_points: 0 },
+    experiment: { records: [], total: 0, average_intensity: 0, total_intensity: 0, total_points: 0 },
+  }));
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState({ learning: false, experiment: false });
+  const [historyError, setHistoryError] = useState("");
+  const historyScope = useRef<AbortController | null>(null);
   const [historyRevision, setHistoryRevision] = useState(0);
 
-  const updateExperimentCounts = useCallback((projectId: number, total: number, todo: number) => {
-    setProjects((current) => current.map((project) => project.id === projectId
-      ? { ...project, experiment_count: total, experiment_todo_count: todo }
-      : project));
-  }, []);
+
 
   const refreshAnalytics = useCallback(async () => {
     try {
@@ -1565,6 +1568,17 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       // Project counts will refresh on the next successful request.
     }
   }, []);
+
+  const updateExperimentCounts = useCallback((projectId: number, total: number, todo: number, changed = false) => {
+    setProjects((current) => current.map((project) => project.id === projectId
+      ? { ...project, experiment_count: total, experiment_todo_count: todo }
+      : project));
+    if (changed) {
+      setHistoryRevision((current) => current + 1);
+      void refreshAnalytics();
+      void refreshProjects();
+    }
+  }, [refreshAnalytics, refreshProjects]);
 
   const refreshProjectDependencies = useCallback(async () => {
     try {
@@ -1627,52 +1641,56 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
   const viewProject = useCallback((id: number) => {
     setProjectFilter(String(id));
+    setHistorySection("records");
     setView("history");
   }, []);
 
   useEffect(() => {
     if (view !== "history" || historySection !== "records") return;
     const controller = new AbortController();
+    historyScope.current = controller;
+    setHistoryLoading(true);
+    setHistoryError("");
+    setHistoryLoadingMore({ learning: false, experiment: false });
     const timer = window.setTimeout(async () => {
-      setHistoryLoading(true);
       try {
-        const params = new URLSearchParams({ limit: "50", offset: "0" });
-        if (query.trim()) params.set("q", query.trim());
-        if (projectFilter !== "all") params.set("project_id", projectFilter);
-        const result = await requestJson(`/api/records?${params}`, { method: "GET", signal: controller.signal });
-        setHistoryRecords(result.records || []);
-        setHistoryTotal(result.total || 0);
-        setHistoryAverage(result.average_intensity || 0);
-        setHistoryTotalIntensity(result.total_intensity || 0);
-        setHistoryTotalPoints(result.total_points || 0);
+        const [learning, experiment] = await Promise.all([
+          fetchHistoryPage("learning", 0, controller.signal),
+          fetchHistoryPage("experiment", 0, controller.signal),
+        ]);
+        if (!controller.signal.aborted) setHistoryPages({ learning, experiment });
       } catch (error) {
-        if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "历史记录加载失败。");
+        if (!controller.signal.aborted) setHistoryError(error instanceof Error ? error.message : "历史记录加载失败。");
       } finally {
         if (!controller.signal.aborted) setHistoryLoading(false);
       }
     }, query ? 250 : 0);
     return () => {
       controller.abort();
+      if (historyScope.current === controller) historyScope.current = null;
       window.clearTimeout(timer);
     };
   }, [historyRevision, historySection, projectFilter, query, view]);
 
-  async function loadMoreHistory() {
-    setHistoryLoading(true);
+  async function fetchHistoryPage(recordType: StudyRecordType, offset: number, signal: AbortSignal): Promise<StudyRecordPage> {
+    const params = new URLSearchParams({ limit: "50", offset: String(offset), record_type: recordType });
+    if (query.trim()) params.set("q", query.trim());
+    if (projectFilter !== "all") params.set("project_id", projectFilter);
+    const result = await requestJson(`/api/records?${params}`, { method: "GET", signal });
+    return { records: result.records || [], total: result.total || 0, average_intensity: result.average_intensity || 0, total_intensity: result.total_intensity || 0, total_points: result.total_points || 0 };
+  }
+
+  async function loadMoreHistory(recordType: StudyRecordType) {
+    const controller = historyScope.current;
+    if (!controller || controller.signal.aborted || historyLoading || historyLoadingMore[recordType]) return;
+    setHistoryLoadingMore((current) => ({ ...current, [recordType]: true }));
     try {
-      const params = new URLSearchParams({ limit: "50", offset: String(historyRecords.length) });
-      if (query.trim()) params.set("q", query.trim());
-      if (projectFilter !== "all") params.set("project_id", projectFilter);
-      const result = await requestJson(`/api/records?${params}`, { method: "GET" });
-      setHistoryRecords((current) => [...current, ...(result.records || [])]);
-      setHistoryTotal(result.total || 0);
-      setHistoryAverage(result.average_intensity || 0);
-      setHistoryTotalIntensity(result.total_intensity || 0);
-      setHistoryTotalPoints(result.total_points || 0);
+      const page = await fetchHistoryPage(recordType, historyPages[recordType].records.length, controller.signal);
+      if (!controller.signal.aborted) setHistoryPages((current) => ({ ...current, [recordType]: { ...page, records: [...current[recordType].records, ...page.records] } }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更多记录加载失败。");
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "更多记录加载失败。");
     } finally {
-      setHistoryLoading(false);
+      if (!controller.signal.aborted) setHistoryLoadingMore((current) => ({ ...current, [recordType]: false }));
     }
   }
 
@@ -1691,7 +1709,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           subject: { type: "string", minLength: 1, maxLength: 80 },
           record_type: { type: "string", enum: ["learning", "experiment"], description: "记录类型：学习或实验，默认学习" },
           project_id: { type: ["integer", "null"], description: "所属项目 ID，可不填" },
-          intensity_score: { type: "integer", minimum: 1, maximum: 5, description: "投入强度，1 到 5 分" },
+          intensity_score: { type: "integer", minimum: 1, description: "投入强度：学习 1 到 5 分，实验为正整数" },
           note: { type: "string", maxLength: 2000 },
         },
         required: ["study_date", "subject", "intensity_score"],
@@ -1755,6 +1773,10 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   }, [saveProject, saveRecord]);
 
   const firstName = user.displayName.includes("@") ? "同学" : user.displayName.split(/\s+/)[0];
+  const historyTotal = historyPages.learning.total + historyPages.experiment.total;
+  const historyTotalIntensity = historyPages.learning.total_intensity + historyPages.experiment.total_intensity;
+  const historyTotalPoints = historyPages.learning.total_points + historyPages.experiment.total_points;
+  const historyAverage = historyTotal ? historyTotalIntensity / historyTotal : 0;
   const pendingExperimentCount = projects.reduce((total, project) => total + project.experiment_todo_count, 0);
 
   return (
@@ -1794,10 +1816,10 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <section className="stats-grid" aria-label="学习统计">
             <article className="focus-card">
               <div className="focus-copy"><span>今日累计强度</span><strong>{analytics.today_intensity || "—"}</strong></div>
-              <div className="focus-ring" style={{ "--progress": `${analytics.today_average * 72}deg` } as React.CSSProperties}>
+              <div className="focus-ring" style={{ "--progress": `${Math.min(analytics.today_average * 72, 360)}deg` } as React.CSSProperties}>
                 <span>{analytics.today_count ? `${analytics.today_points} 积分` : "待记录"}</span>
               </div>
-              <div className="focus-progress"><Progress value={analytics.today_average * 20} /><p>{analytics.today_count ? `今日平均强度 ${analytics.today_average.toFixed(1)} / 5` : "每条记录的强度会在当天累加"}</p></div>
+              <div className="focus-progress"><Progress value={Math.min(analytics.today_average * 20, 100)} /><p>{analytics.today_count ? `今日平均强度 ${analytics.today_average.toFixed(1)}` : "每条记录的强度会在当天累加"}</p></div>
             </article>
             <article className="stat-card streak-card"><span><Flame />连续学习</span><strong>{analytics.current_streak}</strong><small>天</small><p>最长连续 {analytics.longest_streak} 天</p></article>
             <button type="button" className="stat-card stat-card-button" onClick={() => setPointsDialog("week")}><span>本周积分</span><strong>{analytics.week_points}</strong><p>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</p><small>点击查看项目分布</small></button>
@@ -1840,10 +1862,18 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
               </SelectContent>
             </Select>
           </div>
-            <section className="records-section history-records">
-              {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
-              {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
-            </section>
+          {historyError ? <div className="data-error" role="alert">{historyError}<Button variant="outline" onClick={() => setHistoryRevision((value) => value + 1)}>重试</Button></div> : (
+            <div className="history-record-columns">
+              {(["learning", "experiment"] as const).map((recordType) => {
+                const page = historyPages[recordType];
+                return <section className={`records-section history-records history-${recordType}`} key={recordType} aria-label={recordType === "learning" ? "学习记录" : "实验记录"}>
+                  <div className="history-column-heading"><h2>{recordType === "learning" ? "学习" : "实验"}</h2><span>{page.total} 条 · {page.total_points} 积分</span></div>
+                  {historyLoading ? <div className="history-loading">正在读取记录…</div> : <RecordList records={page.records} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} recordType={recordType} />}
+                  {!historyLoading && page.total ? <div className="history-pagination"><span>已显示 {page.records.length} / {page.total} 条</span>{page.records.length < page.total ? <Button variant="outline" onClick={() => void loadMoreHistory(recordType)} disabled={historyLoadingMore[recordType]}>{historyLoadingMore[recordType] ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
+                </section>;
+              })}
+            </div>
+          )}
           </> : <TrashView active={view === "history" && historySection === "trash"} revision={historyRevision} onRestored={restoreTrash} />}
         </TabsContent>
 
@@ -1867,9 +1897,9 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="experiments" className="view-content" aria-label="待做实验总目录">
           <header className="topbar history-header">
-            <div><p className="section-kicker">EXPERIMENTS</p><h1>实验目录</h1><p className="page-description">汇总所有项目的实验，按项目顺序排列。</p></div>
+            <div><p className="section-kicker">EXPERIMENTS</p><h1>实验目录</h1><p className="page-description">汇总所有项目的待做实验，按项目顺序排列。</p></div>
           </header>
-          <ProjectExperimentHistory title="全部项目" onChanged={refreshProjects} />
+          <ProjectExperimentHistory title="全部项目" onChanged={() => { refreshProjects(); refreshAnalytics(); setHistoryRevision((value) => value + 1); }} />
         </TabsContent>
 
       </main>

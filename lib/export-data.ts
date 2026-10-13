@@ -23,6 +23,7 @@ export type ExportRecord = {
   study_date: string;
   subject: string;
   record_type: "learning" | "experiment";
+  experiment_id: number | null;
   project_id: number | null;
   project_name: string | null;
   project_importance: number | null;
@@ -91,7 +92,7 @@ export async function getExportData(userId: string) {
   const pageSize = 500;
   for (let offset = 0; ; offset += pageSize) {
     const page = await db.prepare(
-      `SELECT r.id, r.study_date, r.subject, r.record_type, r.project_id,
+      `SELECT r.id, r.study_date, r.subject, r.record_type, r.experiment_id, r.project_id,
               p.name AS project_name, p.importance AS project_importance, p.status AS project_status,
               r.intensity_score,
               COALESCE(p.importance, 0) * r.intensity_score AS points,
@@ -99,7 +100,7 @@ export async function getExportData(userId: string) {
        FROM study_records r
        LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
        WHERE r.user_id = ? AND r.deleted_at IS NULL
-       ORDER BY r.study_date DESC, r.created_at DESC
+       ORDER BY r.study_date DESC, r.created_at DESC, r.id DESC
        LIMIT ? OFFSET ?`,
     ).bind(userId, pageSize, offset).all<ExportRecord>();
     records.push(...page.results);

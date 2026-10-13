@@ -36,6 +36,8 @@ export async function GET(request: Request) {
   if (!user) return jsonError("请先登录。", 401);
   try {
     const params = new URL(request.url).searchParams;
+    const recordType = params.get("record_type");
+    if (recordType !== null && recordType !== "learning" && recordType !== "experiment") return jsonError("请选择学习或实验。", 400);
     const requestedLimit = Number(params.get("limit") || 50);
     const requestedOffset = Number(params.get("offset") || 0);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
@@ -51,6 +53,7 @@ export async function GET(request: Request) {
       projectId,
       date,
       query: (params.get("q") || "").trim().slice(0, 120),
+      recordType: recordType ?? undefined,
     }));
   } catch (error) {
     console.error("records:get", error);

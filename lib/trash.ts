@@ -68,6 +68,8 @@ export async function listTrash(userId: string): Promise<TrashItem[]> {
        FROM study_records r
        LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
        WHERE r.user_id = ? AND r.deleted_at IS NOT NULL AND r.deleted_at >= ?
+         AND NOT EXISTS (SELECT 1 FROM project_experiments e WHERE e.id = r.experiment_id AND e.user_id = r.user_id
+           AND (e.status = 'todo' OR e.deleted_at = r.deleted_at))
          AND NOT EXISTS (
            SELECT 1 FROM projects deleted_project
            WHERE deleted_project.id = r.project_id AND deleted_project.user_id = r.user_id
@@ -104,20 +106,32 @@ export async function restoreTrashItem(userId: string, kind: "record" | "project
   const db = database();
   const cutoff = cutoffDate();
   if (kind === "experiment") {
-    const result = await db.prepare(
+    const experiment = await db.prepare(`SELECT deleted_at, status FROM project_experiments
+      WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?
+        AND EXISTS (SELECT 1 FROM projects p WHERE p.id = project_experiments.project_id AND p.user_id = ? AND p.deleted_at IS NULL)`)
+      .bind(id, userId, cutoff, userId).first<{ deleted_at: string; status: string }>();
+    if (!experiment) return false;
+    const results = await db.batch([db.prepare(
       `UPDATE project_experiments SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?
          AND EXISTS (
            SELECT 1 FROM projects p WHERE p.id = project_experiments.project_id AND p.user_id = project_experiments.user_id
              AND p.deleted_at IS NULL
          )`,
-    ).bind(id, userId, cutoff).run();
-    return result.meta.changes > 0;
+    ).bind(id, userId, cutoff),
+    db.prepare(`UPDATE study_records SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE experiment_id = ? AND user_id = ? AND deleted_at = ?
+        AND EXISTS (SELECT 1 FROM project_experiments e WHERE e.id = ? AND e.user_id = ? AND e.status = 'done' AND e.deleted_at IS NULL)`)
+      .bind(id, userId, experiment.deleted_at, id, userId),
+    ]);
+    return results[0].meta.changes > 0;
   }
   if (kind === "record") {
     const result = await db.prepare(
       `UPDATE study_records SET deleted_at = NULL
        WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?
+         AND NOT EXISTS (SELECT 1 FROM project_experiments e WHERE e.id = study_records.experiment_id AND e.user_id = study_records.user_id
+           AND (e.status = 'todo' OR e.deleted_at IS NOT NULL))
          AND NOT EXISTS (
            SELECT 1 FROM projects p WHERE p.id = study_records.project_id AND p.user_id = study_records.user_id
              AND p.deleted_at = study_records.deleted_at
