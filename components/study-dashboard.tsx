@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Download,
   Flame,
+  FlaskConical,
   FolderKanban,
   Gauge,
   GitBranch,
@@ -1742,6 +1743,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   }, [saveProject, saveRecord]);
 
   const firstName = user.displayName.includes("@") ? "同学" : user.displayName.split(/\s+/)[0];
+  const pendingExperimentCount = projects.reduce((total, project) => total + project.experiment_todo_count, 0);
   const selectedHistoryProject = projectFilter !== "all" && projectFilter !== "none"
     ? projects.find((project) => String(project.id) === projectFilter)
     : undefined;
@@ -1758,12 +1760,11 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <TabsTrigger value="history"><History />历史记录</TabsTrigger>
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
         </TabsList>
-        <div className="sidebar-note">
-          <span>本周积分</span>
-          <strong>{analytics.week_points || "尚无记录"}</strong>
-          <Progress value={analytics.week_average * 20} />
-          <small>累计强度 {analytics.week_intensity} · {analytics.week_count} 次记录</small>
-        </div>
+        <button type="button" className="sidebar-experiments" aria-current={view === "experiments" ? "page" : undefined} onClick={() => setView("experiments")}>
+          <span><FlaskConical />待做实验</span>
+          <strong>{loadError ? "查看列表" : `${pendingExperimentCount} 个待做`}</strong>
+          <small>打开总目录<ChevronRight /></small>
+        </button>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
           <span><small>学习账户</small><strong title={user.email}>{user.email}</strong></span>
@@ -1859,12 +1860,20 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           />
         </TabsContent>
 
+        <TabsContent value="experiments" className="view-content" aria-label="待做实验总目录">
+          <header className="topbar history-header">
+            <div><p className="section-kicker">EXPERIMENTS</p><h1>待做实验</h1><p className="page-description">汇总所有项目的待做实验，按项目顺序排列。</p></div>
+          </header>
+          <ProjectExperimentHistory title="全部项目" />
+        </TabsContent>
+
       </main>
 
       <TabsList className="mobile-nav">
         <TabsTrigger value="dashboard"><LayoutDashboard />今日</TabsTrigger>
         <TabsTrigger value="history"><History />历史</TabsTrigger>
         <TabsTrigger value="projects"><FolderKanban />项目</TabsTrigger>
+        <TabsTrigger value="experiments"><FlaskConical />待做实验</TabsTrigger>
       </TabsList>
       <Toaster position="top-center" richColors />
     </Tabs>

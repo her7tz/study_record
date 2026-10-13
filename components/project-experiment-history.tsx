@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Circle, FlaskConical, Gauge } from "lucide-react";
 import type { ProjectExperiment } from "@/lib/project-model";
 
@@ -10,25 +10,29 @@ type ExperimentList = {
   experiment_todo_count: number;
 };
 
-export function ProjectExperimentHistory() {
+export function ProjectExperimentHistory({ title = "待做实验列表" }: { title?: string }) {
+  const headingId = useId();
   const [items, setItems] = useState<ExperimentList["experiments"]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setError("");
     void fetch("/api/project-experiments", { signal: controller.signal })
       .then(async (response) => {
         const result = await response.json() as ExperimentList & { error?: string };
         if (!response.ok) throw new Error(result.error || "实验列表加载失败。");
         setItems(result.experiments || []);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setItems([]);
+      .catch((cause) => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "实验列表加载失败。");
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, []);
+  }, [retry]);
 
   function renderItems(rows: ExperimentList["experiments"]) {
     return rows.map((item) => (
@@ -40,11 +44,13 @@ export function ProjectExperimentHistory() {
   }
 
   return (
-    <section className="project-experiment-history" aria-labelledby="project-experiment-history-title">
+    <section className="project-experiment-history" aria-labelledby={headingId}>
       <div className="project-experiment-history-heading">
-        <div><p className="section-kicker"><FlaskConical />EXPERIMENTS</p><h2 id="project-experiment-history-title">待做实验列表 <span>{items.length}</span></h2></div>
+        <div><h2 id={headingId}>{title} {!loading && !error ? <span>{items.length}</span> : null}</h2></div>
       </div>
-      {loading ? <div className="project-experiment-history-empty">正在读取实验…</div> : items.length ? (
+      {loading ? <div className="project-experiment-history-empty" role="status">正在读取实验…</div> : error ? (
+        <div className="project-experiment-history-empty"><p role="alert">{error}</p><button type="button" className="export-button" onClick={() => setRetry((value) => value + 1)}>重试</button></div>
+      ) : items.length ? (
         <div className="project-experiment-history-list">{renderItems(items)}</div>
       ) : <div className="project-experiment-history-empty"><FlaskConical /><p>当前没有待做实验。</p></div>}
     </section>

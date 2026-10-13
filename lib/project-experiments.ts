@@ -47,7 +47,7 @@ export async function listTodoProjectExperiments(userId: string) {
      FROM project_experiments e
      JOIN projects p ON p.id = e.project_id AND p.user_id = e.user_id AND p.deleted_at IS NULL
      WHERE e.user_id = ? AND e.deleted_at IS NULL AND e.status = 'todo'
-     ORDER BY p.sort_order, p.id, e.sort_order, e.id`,
+     ORDER BY p.sort_order, p.created_at, p.id, e.sort_order, e.id`,
   ).bind(userId).all<ProjectExperiment & { project_name: string }>();
   const experiments = result.results.map((experiment) => ({
     ...experiment,
