@@ -6,6 +6,7 @@ import {
   removeRecord,
   validateRecord,
   type StudyRecordInput,
+  type StudyRecordType,
 } from "@/lib/study-records";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ async function readInput(request: Request): Promise<StudyRecordInput> {
   return {
     study_date: String(payload.study_date || ""),
     subject: String(payload.subject || "").trim(),
+    record_type: (payload.record_type === undefined ? "learning" : payload.record_type) as StudyRecordType,
     project_id: payload.project_id === null || payload.project_id === undefined ? null : Number(payload.project_id),
     intensity_score: Number(payload.intensity_score),
     note: String(payload.note || "").trim(),
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
     }));
   } catch (error) {
     console.error("records:get", error);
-    return jsonError("暂时无法读取学习记录。", 503);
+    return jsonError("暂时无法读取记录。", 503);
   }
 }
 
@@ -80,6 +82,7 @@ export async function PATCH(request: Request) {
     const input: StudyRecordInput = {
       study_date: String(payload.study_date || ""),
       subject: String(payload.subject || "").trim(),
+      record_type: (payload.record_type === undefined ? "learning" : payload.record_type) as StudyRecordType,
       project_id: payload.project_id === null || payload.project_id === undefined ? null : Number(payload.project_id),
       intensity_score: Number(payload.intensity_score),
       note: String(payload.note || "").trim(),

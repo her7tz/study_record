@@ -133,6 +133,7 @@ const projectChartColors: Record<string, string> = {
 
 function recordInput(record: StudyRecord | null, today: string): StudyRecordInput {
   return {
+    record_type: record?.record_type || "learning",
     study_date: record?.study_date || today,
     subject: record?.subject || "",
     project_id: record?.project_id ?? null,
@@ -201,7 +202,7 @@ function RecordEditor({
       if (!result.record) throw new Error("没有收到保存结果。");
       onSaved(result.record);
       setOpen(false);
-      toast.success(record ? "记录已更新" : "学习记录已保存");
+      toast.success(record ? "记录已更新" : "记录已保存");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存失败，请稍后再试。");
     } finally {
@@ -218,17 +219,24 @@ function RecordEditor({
           </button>
         ) : (
           <Button className="add-button" size="lg" onClick={begin}>
-            <Plus /> 添加学习记录
+            <Plus /> 添加记录
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="record-dialog sm:max-w-[560px]">
         <DialogHeader>
           <p className="section-kicker">{record ? "调整记录" : "新的积累"}</p>
-          <DialogTitle>{record ? "编辑学习记录" : "今天学了什么？"}</DialogTitle>
-          <DialogDescription>写下内容并评估这次学习的投入强度。</DialogDescription>
+          <DialogTitle>{record ? "编辑记录" : "添加记录"}</DialogTitle>
+          <DialogDescription>选择学习或实验，写下内容并评估这次投入的强度。</DialogDescription>
         </DialogHeader>
         <form className="record-form" onSubmit={submit}>
+          <div className="form-row">
+            <Label htmlFor={`record-type-${record?.id || "new"}`}>记录类型</Label>
+            <Select value={values.record_type} onValueChange={(value) => setValues({ ...values, record_type: value as StudyRecordInput["record_type"] })}>
+              <SelectTrigger id={`record-type-${record?.id || "new"}`}><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="learning">学习</SelectItem><SelectItem value="experiment">实验</SelectItem></SelectContent>
+            </Select>
+          </div>
           <div className="form-row">
             <Label htmlFor={`study-date-${record?.id || "new"}`}>日期</Label>
             <Input
@@ -240,7 +248,7 @@ function RecordEditor({
             />
           </div>
           <div className="form-row">
-            <Label htmlFor={`subject-${record?.id || "new"}`}>学习内容</Label>
+            <Label htmlFor={`subject-${record?.id || "new"}`}>记录内容</Label>
             <Input
               id={`subject-${record?.id || "new"}`}
               value={values.subject}
@@ -265,8 +273,8 @@ function RecordEditor({
             </Select>
           </div>
           <div className="form-row">
-            <div className="label-line"><Label>学习强度</Label><span>{values.intensity_score} / 5 · 可按记录累加</span></div>
-            <div className="intensity-choices" aria-label="学习强度分数">
+            <div className="label-line"><Label>投入强度</Label><span>{values.intensity_score} / 5 · 可按记录累加</span></div>
+            <div className="intensity-choices" aria-label="投入强度分数">
               {intensityChoices.map((score) => (
                 <button
                   key={score}
@@ -281,7 +289,7 @@ function RecordEditor({
             </div>
           </div>
           <div className="form-row">
-            <div className="label-line"><Label htmlFor={`note-${record?.id || "new"}`}>学习备注</Label><span>选填</span></div>
+            <div className="label-line"><Label htmlFor={`note-${record?.id || "new"}`}>备注</Label><span>选填</span></div>
             <Textarea
               id={`note-${record?.id || "new"}`}
               rows={4}
@@ -372,7 +380,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
       });
       setItems((current) => current.filter((entry) => `${entry.kind}:${entry.id}` !== key));
       onRestored();
-      toast.success(item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "学习记录已恢复");
+      toast.success(item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "记录已恢复");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "恢复失败，请稍后再试。");
     } finally {
@@ -391,7 +399,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
             return (
               <article className="trash-item" key={key}>
                 <div className="trash-item-copy">
-                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : "学习记录"}</span>
+                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : "记录"}</span>
                   <h2>{item.title}</h2>
                   {item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : item.kind === "experiment" ? <p>{item.project_name} · 强度 {item.intensity_score} · {item.status === "todo" ? "待做" : "已完成"}</p> : <p>{item.record_count} 条记录、{item.experiment_count} 个实验会随项目一起恢复</p>}
                   <small>恢复期限至 {deadline}</small>
@@ -404,7 +412,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
           })}
         </div>
       ) : (
-        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验和学习记录会显示在这里。</p></div>
+        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验和记录会显示在这里。</p></div>
       )}
     </section>
   );
@@ -427,7 +435,7 @@ function RecordList({
     return (
       <div className="empty-state">
         <span><NotebookPen /></span>
-        <h3>从第一条学习记录开始</h3>
+        <h3>从第一条记录开始</h3>
         <p>完成一次学习后，把内容和强度记下来。</p>
         <RecordEditor today={today} projects={projects} onSaved={onSaved} />
       </div>
@@ -462,10 +470,13 @@ function RecordList({
                 <div className={`subject-mark mark-${record.id % 4}`}>{record.subject.slice(0, 1).toUpperCase()}</div>
                 <div className="record-copy">
                   <h4>{record.subject}</h4>
-                  {recordProject ? <span className={`project-pill project-${recordProject.color}`}>{recordProject.name}</span> : null}
+                  <div className="record-meta">
+                    <span className={`record-type ${record.record_type}`}>{record.record_type === "experiment" ? "实验" : "学习"}</span>
+                    {recordProject ? <span className={`project-pill project-${recordProject.color}`}>{recordProject.name}</span> : null}
+                  </div>
                   <p className={record.note ? "" : "muted"}>{record.note || "没有填写备注"}</p>
                 </div>
-                <div className="record-intensity" aria-label={`学习强度 ${record.intensity_score} 分`}>
+                <div className="record-intensity" aria-label={`投入强度 ${record.intensity_score} 分`}>
                   <Gauge /><strong>{record.intensity_score}</strong><span>/ 5</span>
                   <b>{points} 积分</b>
                   <div className="intensity-meter" aria-hidden="true">{intensityChoices.map((score) => <i key={score} className={score <= record.intensity_score ? "active" : ""} />)}</div>
@@ -571,8 +582,8 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
         <DialogContent className="heatmap-dialog sm:max-w-[520px]">
           <DialogHeader>
             <p className="section-kicker">POINT SOURCES</p>
-            <DialogTitle>{selectedDate ? `${formatStudyDate(selectedDate)} · 学习记录来源` : "学习记录来源"}</DialogTitle>
-            <DialogDescription>{loadingSources ? "正在读取…" : `${selectedRecords.length} 条学习记录`}</DialogDescription>
+            <DialogTitle>{selectedDate ? `${formatStudyDate(selectedDate)} · 记录来源` : "记录来源"}</DialogTitle>
+            <DialogDescription>{loadingSources ? "正在读取…" : `${selectedRecords.length} 条记录`}</DialogDescription>
           </DialogHeader>
           {loadingSources ? <div className="heatmap-day-empty"><p>加载中…</p></div> : selectedRecords.length ? (
             <div className="heatmap-day-list">
@@ -587,7 +598,7 @@ function StudyTrend({ analytics, projects }: { analytics: StudyAnalytics; projec
                 );
               })}
             </div>
-          ) : <div className="heatmap-day-empty"><p>这一天没有学习记录。</p></div>}
+          ) : <div className="heatmap-day-empty"><p>这一天没有记录。</p></div>}
         </DialogContent>
       </Dialog>
     </>
@@ -658,7 +669,7 @@ function PointDistributionDialog({
         )}
         {scope === "total" ? (
           <DialogFooter className="points-dialog-footer">
-            <p>积分兑换会从可用余额中扣除，不影响学习记录与项目学分。</p>
+            <p>积分兑换会从可用余额中扣除，不影响记录与项目学分。</p>
             <Button type="button" onClick={onRedeem}><Star />兑换积分</Button>
           </DialogFooter>
         ) : null}
@@ -887,7 +898,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
                 style={index === 0 ? { gridColumnStart: firstColumn } : undefined}
                 onClick={() => openDay(day.key)}
                 title={day.future ? `${day.key}（未来日期）` : `${day.key}：${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无记录"}`}
-                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无学习记录"}`}
+                aria-label={day.future ? `${day.key}，未来日期` : `${day.key}，${day.count ? `${day.count} 条记录，累计强度 ${day.score}，积分 ${totals.get(day.key)?.total_points || 0}` : "无记录"}`}
               ><span>{day.day}</span></button>
             ))}
           </div>
@@ -903,8 +914,8 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
               {loadingDay
                 ? "正在读取当天记录…"
                 : selectedRecords.length
-                ? `${selectedTotal} 条学习记录 · 累计强度 ${selectedTotalIntensity} · 积分 ${selectedTotalPoints} · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
-                : "这一天还没有学习记录。"}
+                ? `${selectedTotal} 条记录 · 累计强度 ${selectedTotalIntensity} · 积分 ${selectedTotalPoints} · 平均强度 ${selectedAverage.toFixed(1)}${selectedTotal > selectedRecords.length ? ` · 显示前 ${selectedRecords.length} 条` : ""}`
+                : "这一天还没有记录。"}
             </DialogDescription>
           </DialogHeader>
           {loadingDay ? <div className="heatmap-day-empty"><p>加载中…</p></div> : selectedRecords.length ? (
@@ -924,7 +935,7 @@ function StudyHeatmap({ initialDays, projects, today }: { initialDays: HeatmapDa
               })}
             </div>
           ) : (
-            <div className="heatmap-day-empty"><NotebookPen /><p>从“添加学习记录”开始积累这一天。</p></div>
+            <div className="heatmap-day-empty"><NotebookPen /><p>从“添加记录”开始积累这一天。</p></div>
           )}
         </DialogContent>
       </Dialog>
@@ -997,7 +1008,7 @@ function ProjectEditor({
         <DialogHeader>
           <p className="section-kicker">PROJECT</p>
           <DialogTitle>{project ? "编辑项目" : "建立学习项目"}</DialogTitle>
-          <DialogDescription>把同一目标下的学习记录整理在一起。</DialogDescription>
+          <DialogDescription>把同一目标下的记录整理在一起。</DialogDescription>
         </DialogHeader>
         <form className="record-form project-editor-form" onSubmit={submit}>
           <div className="project-form-scroll">
@@ -1031,7 +1042,7 @@ function ProjectEditor({
                 rows={3}
                 maxLength={500}
                 value={values.goal}
-                placeholder="例如：完成一个可发布的学习记录网站"
+                placeholder="例如：完成一个可发布的记录网站"
                 onChange={(event) => setValues({ ...values, goal: event.target.value })}
               />
             </div>
@@ -1051,7 +1062,7 @@ function ProjectEditor({
                   </button>
                 ))}
               </div>
-              <p className="form-hint">记录积分 = 项目重要度 × 学习强度；完成项目可获得同等学分。</p>
+              <p className="form-hint">记录积分 = 项目重要度 × 投入强度；完成项目可获得同等学分。</p>
             </div>
             <div className="project-form-grid">
               <div className="form-row">
@@ -1133,7 +1144,7 @@ function DeleteProject({ project, onDeleted }: { project: StudyProject; onDelete
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>删除“{project.name}”？</AlertDialogTitle>
-          <AlertDialogDescription>项目和关联的学习记录会一起移入回收站，可在 7 天内一起恢复。</AlertDialogDescription>
+          <AlertDialogDescription>项目和关联的记录会一起移入回收站，可在 7 天内一起恢复。</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>保留项目</AlertDialogCancel>
@@ -1411,7 +1422,7 @@ function ProjectBoard({
       <div className="empty-state project-empty">
         <span><FolderKanban /></span>
         <h3>创建第一个学习项目</h3>
-        <p>按课程、目标或作品整理你的学习记录。</p>
+        <p>按课程、目标或作品整理你的记录。</p>
         <ProjectEditor onSaved={onSaved} />
       </div>
     );
@@ -1671,15 +1682,16 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
     const lifecycle = new AbortController();
     void Promise.resolve(context.registerTool({
       name: "create_study_record",
-      title: "添加学习记录",
-      description: "添加一条学习内容、日期、强度和备注，并更新当前学习仪表盘。",
+      title: "添加记录",
+      description: "添加一条记录内容、日期、强度和备注，并更新当前学习仪表盘。",
       inputSchema: {
         type: "object",
         properties: {
           study_date: { type: "string", description: "YYYY-MM-DD 格式的日期" },
           subject: { type: "string", minLength: 1, maxLength: 80 },
+          record_type: { type: "string", enum: ["learning", "experiment"], description: "记录类型：学习或实验，默认学习" },
           project_id: { type: ["integer", "null"], description: "所属项目 ID，可不填" },
-          intensity_score: { type: "integer", minimum: 1, maximum: 5, description: "学习强度，1 到 5 分" },
+          intensity_score: { type: "integer", minimum: 1, maximum: 5, description: "投入强度，1 到 5 分" },
           note: { type: "string", maxLength: 2000 },
         },
         required: ["study_date", "subject", "intensity_score"],
@@ -1691,7 +1703,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
         const result = await requestJson("/api/records", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...value, project_id: value.project_id ?? null, note: value.note || "" }),
+          body: JSON.stringify({ ...value, record_type: value.record_type || "learning", project_id: value.project_id ?? null, note: value.note || "" }),
         });
         if (!result.record) throw new Error("记录没有保存成功。");
         saveRecord(result.record);
@@ -1701,7 +1713,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
     void Promise.resolve(context.registerTool({
       name: "create_study_project",
       title: "创建学习项目",
-      description: "创建一个学习项目，用来整理相关学习记录。",
+      description: "创建一个学习项目，用来整理相关记录。",
       inputSchema: {
         type: "object",
         properties: {
@@ -1744,9 +1756,6 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
   const firstName = user.displayName.includes("@") ? "同学" : user.displayName.split(/\s+/)[0];
   const pendingExperimentCount = projects.reduce((total, project) => total + project.experiment_todo_count, 0);
-  const selectedHistoryProject = projectFilter !== "all" && projectFilter !== "none"
-    ? projects.find((project) => String(project.id) === projectFilter)
-    : undefined;
 
   return (
     <Tabs value={view} onValueChange={setView} className="app-frame">
@@ -1808,7 +1817,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条学习记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目和学习记录可在删除后 7 天内恢复。</p>}</div>
+            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目和记录可在删除后 7 天内恢复。</p>}</div>
             {historySection === "records" ? <div className="header-actions">
               <a className="export-button" href="/api/export?format=csv" download><Download />导出 CSV</a>
               <a className="export-button" href="/api/export?format=json" download><Download />导出 JSON</a>
@@ -1816,12 +1825,12 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             </div> : null}
           </header>
           <div className="history-sections" role="tablist" aria-label="历史记录分类">
-            <button type="button" role="tab" aria-selected={historySection === "records"} className={historySection === "records" ? "active" : ""} onClick={() => setHistorySection("records")}><History />学习记录</button>
+            <button type="button" role="tab" aria-selected={historySection === "records"} className={historySection === "records" ? "active" : ""} onClick={() => setHistorySection("records")}><History />记录</button>
             <button type="button" role="tab" aria-selected={historySection === "trash"} className={historySection === "trash" ? "active" : ""} onClick={() => setHistorySection("trash")}><Trash2 />回收站</button>
           </div>
           {historySection === "records" ? <>
           <div className="history-filters">
-            <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索学习记录" />{query ? <span>{historyTotal} 条结果</span> : null}</div>
+            <div className="search-box"><Search /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索内容、项目或备注" aria-label="搜索记录" />{query ? <span>{historyTotal} 条结果</span> : null}</div>
             <Select value={projectFilter} onValueChange={setProjectFilter}>
               <SelectTrigger className="history-project-filter"><SelectValue placeholder="全部项目" /></SelectTrigger>
               <SelectContent>
@@ -1831,14 +1840,10 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
               </SelectContent>
             </Select>
           </div>
-          <div className={selectedHistoryProject ? "project-history-columns" : ""}>
             <section className="records-section history-records">
-              {selectedHistoryProject ? <div className="project-experiment-history-heading"><div><p className="section-kicker"><History />PROJECT RECORDS</p><h2>学习记录</h2></div></div> : null}
               {historyLoading && !historyRecords.length ? <div className="history-loading">正在读取历史记录…</div> : <RecordList records={historyRecords} projects={projects} today={today} onSaved={saveRecord} onDeleted={deleteRecord} />}
               {historyTotal ? <div className="history-pagination"><span>已显示 {historyRecords.length} / {historyTotal} 条</span>{historyRecords.length < historyTotal ? <Button variant="outline" onClick={loadMoreHistory} disabled={historyLoading}>{historyLoading ? "加载中…" : "加载更多"}</Button> : null}</div> : null}
             </section>
-            {selectedHistoryProject ? <ProjectExperimentHistory /> : null}
-          </div>
           </> : <TrashView active={view === "history" && historySection === "trash"} revision={historyRevision} onRestored={restoreTrash} />}
         </TabsContent>
 
@@ -1862,9 +1867,9 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="experiments" className="view-content" aria-label="待做实验总目录">
           <header className="topbar history-header">
-            <div><p className="section-kicker">EXPERIMENTS</p><h1>待做实验</h1><p className="page-description">汇总所有项目的待做实验，按项目顺序排列。</p></div>
+            <div><p className="section-kicker">EXPERIMENTS</p><h1>实验目录</h1><p className="page-description">汇总所有项目的实验，按项目顺序排列。</p></div>
           </header>
-          <ProjectExperimentHistory title="全部项目" />
+          <ProjectExperimentHistory title="全部项目" onChanged={refreshProjects} />
         </TabsContent>
 
       </main>

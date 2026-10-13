@@ -3,11 +3,11 @@ import {
   editProjectExperiment,
   insertProjectExperiment,
   listProjectExperiments,
-  listTodoProjectExperiments,
+  listAllProjectExperiments,
   removeProjectExperiment,
   validateProjectExperiment,
 } from "@/lib/project-experiments";
-import type { ProjectExperimentStatus } from "@/lib/project-model";
+import { projectExperimentStatuses, type ProjectExperimentStatus } from "@/lib/project-model";
 
 export const dynamic = "force-dynamic";
 
@@ -31,13 +31,16 @@ async function readBody(request: Request) {
 export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return jsonError("请先登录。", 401);
-  const projectIdValue = new URL(request.url).searchParams.get("project_id");
+  const url = new URL(request.url);
+  const projectIdValue = url.searchParams.get("project_id");
   if (projectIdValue === null) {
+    const status = url.searchParams.get("status") ?? "todo";
+    if (!projectExperimentStatuses.includes(status as ProjectExperimentStatus)) return jsonError("请选择有效的实验状态。", 400);
     try {
-      return Response.json(await listTodoProjectExperiments(user.userId));
+      return Response.json(await listAllProjectExperiments(user.userId, status as ProjectExperimentStatus));
     } catch (error) {
-      console.error("project-experiments:list-todo", error);
-      return jsonError("暂时无法读取待做实验。", 503);
+      console.error("project-experiments:list-all", error);
+      return jsonError("暂时无法读取实验目录。", 503);
     }
   }
   const projectId = positiveId(projectIdValue);
@@ -59,12 +62,14 @@ export async function POST(request: Request) {
   if (!payload) return jsonError("实验信息无效。", 400);
   const projectId = positiveId(payload.project_id);
   const name = String(payload.name ?? "").trim();
+  const description = String(payload.description ?? "").trim();
   const intensityScore = Number(payload.intensity_score);
+  const status = String(payload.status ?? "todo");
   if (!projectId) return jsonError("项目编号无效。", 400);
-  const problem = validateProjectExperiment(name, intensityScore);
+  const problem = validateProjectExperiment(name, intensityScore, status, description);
   if (problem) return jsonError(problem, 400);
   try {
-    if (!(await insertProjectExperiment(user.userId, projectId, name, intensityScore))) return jsonError("这个项目不存在。", 404);
+    if (!(await insertProjectExperiment(user.userId, projectId, name, intensityScore, description, status as ProjectExperimentStatus))) return jsonError("这个项目不存在。", 404);
     return Response.json(await listProjectExperiments(user.userId, projectId), { status: 201 });
   } catch (error) {
     console.error("project-experiments:create", error);
@@ -80,13 +85,14 @@ export async function PATCH(request: Request) {
   const projectId = positiveId(payload.project_id);
   const id = positiveId(payload.id);
   const name = String(payload.name ?? "").trim();
+  const description = String(payload.description ?? "").trim();
   const intensityScore = Number(payload.intensity_score);
   const status = String(payload.status ?? "");
   if (!projectId || !id) return jsonError("项目或实验编号无效。", 400);
-  const problem = validateProjectExperiment(name, intensityScore, status);
+  const problem = validateProjectExperiment(name, intensityScore, status, description);
   if (problem) return jsonError(problem, 400);
   try {
-    if (!(await editProjectExperiment(user.userId, projectId, id, name, intensityScore, status as ProjectExperimentStatus))) {
+    if (!(await editProjectExperiment(user.userId, projectId, id, name, intensityScore, status as ProjectExperimentStatus, description))) {
       return jsonError("这条实验不存在。", 404);
     }
     return Response.json(await listProjectExperiments(user.userId, projectId));

@@ -6,8 +6,9 @@ function database() {
   return env.DB;
 }
 
-export function validateProjectExperiment(name: string, intensityScore: number, status?: string) {
+export function validateProjectExperiment(name: string, intensityScore: number, status?: string, description = "") {
   if (!name.trim() || name.trim().length > 80) return "实验名称需填写且不超过 80 个字。";
+  if (description.trim().length > 2000) return "实验简介不超过 2000 个字。";
   if (!Number.isSafeInteger(intensityScore) || intensityScore < 1) return "实验强度需为正整数。";
   if (status !== undefined && !projectExperimentStatuses.includes(status as ProjectExperimentStatus)) return "请选择有效的实验状态。";
   return null;
@@ -21,7 +22,7 @@ export async function listProjectExperiments(userId: string, projectId: number) 
   if (!project) return null;
 
   const result = await db.prepare(
-    `SELECT id, user_id, project_id, name, intensity_score, status, sort_order, completed_at, created_at, updated_at
+    `SELECT id, user_id, project_id, name, description, intensity_score, status, sort_order, completed_at, created_at, updated_at
      FROM project_experiments
      WHERE project_id = ? AND user_id = ? AND deleted_at IS NULL
      ORDER BY CASE WHEN status = 'todo' THEN 0 ELSE 1 END, sort_order, id`,
@@ -40,15 +41,15 @@ export async function listProjectExperiments(userId: string, projectId: number) 
   };
 }
 
-export async function listTodoProjectExperiments(userId: string) {
+export async function listAllProjectExperiments(userId: string, status: ProjectExperimentStatus = "todo") {
   const result = await database().prepare(
-    `SELECT e.id, e.user_id, e.project_id, e.name, e.intensity_score, e.status, e.sort_order,
+    `SELECT e.id, e.user_id, e.project_id, e.name, e.description, e.intensity_score, e.status, e.sort_order,
             e.completed_at, e.created_at, e.updated_at, p.name AS project_name
      FROM project_experiments e
      JOIN projects p ON p.id = e.project_id AND p.user_id = e.user_id AND p.deleted_at IS NULL
-     WHERE e.user_id = ? AND e.deleted_at IS NULL AND e.status = 'todo'
+     WHERE e.user_id = ? AND e.deleted_at IS NULL AND e.status = ?
      ORDER BY p.sort_order, p.created_at, p.id, e.sort_order, e.id`,
-  ).bind(userId).all<ProjectExperiment & { project_name: string }>();
+  ).bind(userId, status).all<ProjectExperiment & { project_name: string }>();
   const experiments = result.results.map((experiment) => ({
     ...experiment,
     id: Number(experiment.id),
@@ -56,10 +57,21 @@ export async function listTodoProjectExperiments(userId: string) {
     intensity_score: Number(experiment.intensity_score),
     sort_order: Number(experiment.sort_order),
   }));
-  return { experiments, experiment_count: experiments.length, experiment_todo_count: experiments.length };
+  return {
+    experiments,
+    experiment_count: experiments.length,
+    experiment_todo_count: status === "todo" ? experiments.length : 0,
+  };
 }
 
-export async function insertProjectExperiment(userId: string, projectId: number, name: string, intensityScore: number) {
+export async function insertProjectExperiment(
+  userId: string,
+  projectId: number,
+  name: string,
+  intensityScore: number,
+  description = "",
+  status: ProjectExperimentStatus = "todo",
+) {
   const db = database();
   const project = await db.prepare(
     "SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
@@ -70,9 +82,9 @@ export async function insertProjectExperiment(userId: string, projectId: number,
     "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM project_experiments WHERE project_id = ? AND user_id = ? AND deleted_at IS NULL",
   ).bind(projectId, userId).first<{ next_order: number }>();
   await db.prepare(
-    `INSERT INTO project_experiments (user_id, project_id, name, intensity_score, sort_order)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).bind(userId, projectId, name.trim(), intensityScore, Number(order?.next_order || 0)).run();
+    `INSERT INTO project_experiments (user_id, project_id, name, description, intensity_score, status, sort_order, completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'done' THEN CURRENT_TIMESTAMP ELSE NULL END)`,
+  ).bind(userId, projectId, name.trim(), description.trim(), intensityScore, status, Number(order?.next_order || 0), status).run();
   return true;
 }
 
@@ -83,15 +95,16 @@ export async function editProjectExperiment(
   name: string,
   intensityScore: number,
   status: ProjectExperimentStatus,
+  description = "",
 ) {
   const result = await database().prepare(
     `UPDATE project_experiments
-     SET name = ?, intensity_score = ?, status = ?,
+     SET name = ?, description = ?, intensity_score = ?, status = ?,
          completed_at = CASE WHEN ? = 'done' THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ? AND project_id = ? AND user_id = ? AND deleted_at IS NULL
        AND EXISTS (SELECT 1 FROM projects p WHERE p.id = project_experiments.project_id AND p.user_id = ? AND p.deleted_at IS NULL)`,
-  ).bind(name.trim(), intensityScore, status, status, experimentId, projectId, userId, userId).run();
+  ).bind(name.trim(), description.trim(), intensityScore, status, status, experimentId, projectId, userId, userId).run();
   return result.meta.changes > 0;
 }
 

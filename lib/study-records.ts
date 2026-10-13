@@ -1,10 +1,13 @@
 import { env } from "cloudflare:workers";
 
+export type StudyRecordType = "learning" | "experiment";
+
 export type StudyRecord = {
   id: number;
   user_id: string;
   study_date: string;
   subject: string;
+  record_type: StudyRecordType;
   project_id: number | null;
   intensity_score: number;
   note: string;
@@ -15,6 +18,7 @@ export type StudyRecord = {
 export type StudyRecordInput = {
   study_date: string;
   subject: string;
+  record_type: StudyRecordType;
   project_id: number | null;
   intensity_score: number;
   note: string;
@@ -37,18 +41,19 @@ export type StudyRecordQuery = {
 };
 
 function database() {
-  if (!env.DB) throw new Error("学习记录数据库暂时不可用。");
+  if (!env.DB) throw new Error("记录数据库暂时不可用。");
   return env.DB;
 }
 
 export function validateRecord(input: StudyRecordInput) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.study_date)) return "请选择有效日期。";
-  if (!input.subject || input.subject.length > 80) return "学习内容需填写且不超过 80 个字。";
+  if (!input.subject || input.subject.length > 80) return "记录内容需填写且不超过 80 个字。";
+  if (input.record_type !== "learning" && input.record_type !== "experiment") return "请选择学习或实验。";
   if (input.project_id !== null && (!Number.isInteger(input.project_id) || input.project_id < 1)) {
     return "请选择有效项目。";
   }
   if (!Number.isInteger(input.intensity_score) || input.intensity_score < 1 || input.intensity_score > 5) {
-    return "学习强度需为 1–5 分。";
+    return "强度需为 1–5 分。";
   }
   if (input.note.length > 2000) return "备注不能超过 2000 个字。";
   return null;
@@ -79,7 +84,7 @@ export async function listRecords(userId: string, options: StudyRecordQuery = {}
   const db = database();
   const [recordsResult, summary] = await Promise.all([
     db.prepare(
-      `SELECT r.id, r.user_id, r.study_date, r.subject, r.project_id, r.intensity_score, r.note, r.created_at, r.updated_at
+      `SELECT r.id, r.user_id, r.study_date, r.subject, r.record_type, r.project_id, r.intensity_score, r.note, r.created_at, r.updated_at
        FROM study_records r
        LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
        WHERE ${where}
@@ -108,12 +113,12 @@ export async function listRecords(userId: string, options: StudyRecordQuery = {}
 export async function insertRecord(userId: string, input: StudyRecordInput) {
   return database()
     .prepare(
-      `INSERT INTO study_records (user_id, study_date, subject, project_id, intensity_score, note)
-       SELECT ?, ?, ?, ?, ?, ?
+      `INSERT INTO study_records (user_id, study_date, subject, record_type, project_id, intensity_score, note)
+       SELECT ?, ?, ?, ?, ?, ?, ?
        WHERE ? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL)
-       RETURNING id, user_id, study_date, subject, project_id, intensity_score, note, created_at, updated_at`,
+       RETURNING id, user_id, study_date, subject, record_type, project_id, intensity_score, note, created_at, updated_at`,
     )
-    .bind(userId, input.study_date, input.subject, input.project_id, input.intensity_score, input.note, input.project_id, input.project_id, userId)
+    .bind(userId, input.study_date, input.subject, input.record_type, input.project_id, input.intensity_score, input.note, input.project_id, input.project_id, userId)
     .first<StudyRecord>();
 }
 
@@ -121,13 +126,13 @@ export async function editRecord(userId: string, id: number, input: StudyRecordI
   return database()
     .prepare(
       `UPDATE study_records
-       SET study_date = ?, subject = ?, project_id = ?, intensity_score = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+       SET study_date = ?, subject = ?, record_type = ?, project_id = ?, intensity_score = ?, note = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ?
          AND deleted_at IS NULL
          AND (? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL))
-       RETURNING id, user_id, study_date, subject, project_id, intensity_score, note, created_at, updated_at`,
+       RETURNING id, user_id, study_date, subject, record_type, project_id, intensity_score, note, created_at, updated_at`,
     )
-    .bind(input.study_date, input.subject, input.project_id, input.intensity_score, input.note, id, userId, input.project_id, input.project_id, userId)
+    .bind(input.study_date, input.subject, input.record_type, input.project_id, input.intensity_score, input.note, id, userId, input.project_id, input.project_id, userId)
     .first<StudyRecord>();
 }
 

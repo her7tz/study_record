@@ -11,6 +11,7 @@ export type ProjectExperiment = {
   user_id: string;
   project_id: number;
   name: string;
+  description: string;
   intensity_score: number;
   status: ProjectExperimentStatus;
   sort_order: number;

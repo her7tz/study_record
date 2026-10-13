@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { CheckCircle2, Circle, FlaskConical, Gauge, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, FlaskConical, Gauge, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -18,7 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ProjectExperiment, StudyProject } from "@/lib/project-model";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import type { ProjectExperiment, ProjectExperimentStatus, StudyProject } from "@/lib/project-model";
 
 type ExperimentList = {
   experiments: ProjectExperiment[];
@@ -42,7 +44,9 @@ export function ProjectExperiments({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [intensityScore, setIntensityScore] = useState(3);
+  const [status, setStatus] = useState<ProjectExperimentStatus>("todo");
 
   useEffect(() => {
     if (!open) return;
@@ -80,16 +84,15 @@ export function ProjectExperiments({
           project_id: project.id,
           id: editingId,
           name: trimmedName,
+          description: description.trim(),
           intensity_score: intensityScore,
-          status: editingId ? items.find((item) => item.id === editingId)?.status || "todo" : undefined,
+          status,
         }),
       });
       const result = await response.json() as ExperimentList & { error?: string };
       if (!response.ok) throw new Error(result.error || "实验保存失败。");
       applyList(result);
-      setName("");
-      setIntensityScore(3);
-      setEditingId(null);
+      resetForm();
       toast.success(editingId ? "实验已更新" : "实验已添加");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "实验保存失败。");
@@ -98,18 +101,19 @@ export function ProjectExperiments({
     }
   }
 
-  async function updateStatus(item: ProjectExperiment) {
-    const status = item.status === "todo" ? "done" : "todo";
+  async function updateStatus(item: ProjectExperiment, nextStatus: ProjectExperimentStatus) {
+    if (nextStatus === item.status) return;
     setBusyId(item.id);
     try {
       const response = await fetch("/api/project-experiments", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project_id: project.id, id: item.id, name: item.name, intensity_score: item.intensity_score, status }),
+        body: JSON.stringify({ project_id: project.id, id: item.id, name: item.name, description: item.description, intensity_score: item.intensity_score, status: nextStatus }),
       });
       const result = await response.json() as ExperimentList & { error?: string };
       if (!response.ok) throw new Error(result.error || "实验状态更新失败。");
       applyList(result);
+      if (editingId === item.id) setStatus(nextStatus);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "实验状态更新失败。");
     } finally {
@@ -136,13 +140,17 @@ export function ProjectExperiments({
   function edit(item: ProjectExperiment) {
     setEditingId(item.id);
     setName(item.name);
+    setDescription(item.description || "");
     setIntensityScore(item.intensity_score);
+    setStatus(item.status);
   }
 
   function resetForm() {
     setEditingId(null);
     setName("");
+    setDescription("");
     setIntensityScore(3);
+    setStatus("todo");
   }
 
   const todoItems = items.filter((item) => item.status === "todo");
@@ -164,7 +172,7 @@ export function ProjectExperiments({
         <DialogContent className="experiment-dialog sm:max-w-[560px]">
           <DialogHeader>
             <p className="section-kicker">EXPERIMENTS</p>
-            <DialogTitle>{project.name} · 实验待做</DialogTitle>
+            <DialogTitle>{project.name} · 实验</DialogTitle>
             <DialogDescription>记录想验证的实验，完成后可以标记为已完成；强度填写正整数，不设上限。</DialogDescription>
           </DialogHeader>
           <form className="experiment-form" onSubmit={submit}>
@@ -180,6 +188,17 @@ export function ProjectExperiments({
               />
             </div>
             <div className="form-row">
+              <div className="label-line"><Label htmlFor={`experiment-description-${project.id}`}>实验简介</Label><span>选填</span></div>
+              <Textarea
+                id={`experiment-description-${project.id}`}
+                value={description}
+                maxLength={2000}
+                rows={3}
+                placeholder="简述实验目的、要做的内容或预期结果"
+                onChange={(event) => setDescription(event.target.value)}
+              />
+            </div>
+            <div className="form-row">
               <div className="label-line"><Label htmlFor={`experiment-intensity-${project.id}`}>实验强度</Label><span>正整数</span></div>
               <Input
                 id={`experiment-intensity-${project.id}`}
@@ -190,6 +209,16 @@ export function ProjectExperiments({
                 onChange={(event) => setIntensityScore(Number(event.target.value))}
                 required
               />
+            </div>
+            <div className="form-row">
+              <Label htmlFor={`experiment-status-${project.id}`}>实验状态</Label>
+              <Select value={status} onValueChange={(value) => setStatus(value as ProjectExperimentStatus)}>
+                <SelectTrigger id={`experiment-status-${project.id}`} className="project-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todo">待做</SelectItem>
+                  <SelectItem value="done">已完成</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="experiment-form-actions">
               {editingId ? <Button type="button" variant="outline" onClick={resetForm} disabled={saving}>取消编辑</Button> : null}
@@ -206,21 +235,23 @@ export function ProjectExperiments({
                     <h3>{label as string}<span>{experiments.length}</span></h3>
                     {experiments.map((item) => (
                       <article className={`experiment-item ${item.status}`} key={item.id}>
-                        <button
-                          type="button"
-                          className={`experiment-status-toggle ${item.status}`}
-                          aria-label={item.status === "todo" ? `标记 ${item.name} 已完成` : `将 ${item.name} 改为待做`}
-                          onClick={() => void updateStatus(item)}
-                          disabled={busyId === item.id}
-                        >
+                        <div className={`experiment-status-toggle ${item.status}`} aria-label={item.status === "todo" ? "待做" : "已完成"}>
                           {item.status === "done" ? <CheckCircle2 /> : <Circle />}
-                        </button>
+                        </div>
                         <div className="experiment-item-copy">
                           <strong>{item.name}</strong>
+                          {item.description ? <p className="experiment-description">{item.description}</p> : null}
                           <span><Gauge />强度 {item.intensity_score}{item.status === "done" ? ` · 完成日期 ${item.completed_at?.slice(0, 10) || "—"}` : ""}</span>
                         </div>
                         <div className="experiment-item-actions">
-                          <button type="button" className="record-action" aria-label={`编辑实验 ${item.name}`} onClick={() => edit(item)}><Pencil /></button>
+                          <Select value={item.status} onValueChange={(value) => void updateStatus(item, value as ProjectExperimentStatus)} disabled={busyId !== null || saving}>
+                            <SelectTrigger className="experiment-status-select" size="sm" aria-label={`${item.name} 的状态`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todo">待做</SelectItem>
+                              <SelectItem value="done">已完成</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <button type="button" className="record-action" aria-label={`编辑实验 ${item.name}`} onClick={() => edit(item)} disabled={busyId !== null || saving}><Pencil /></button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild><button type="button" className="record-action danger" aria-label={`删除实验 ${item.name}`} disabled={busyId === item.id}><Trash2 /></button></AlertDialogTrigger>
                             <AlertDialogContent>
@@ -242,7 +273,6 @@ export function ProjectExperiments({
               })}
             </div>
           ) : <div className="experiment-empty"><FlaskConical /><p>还没有实验，先记下一个想验证的问题。</p></div>}
-          {doneItems.length ? <p className="experiment-restore-hint"><RotateCcw />点击对勾可将已完成实验改回待做。</p> : null}
         </DialogContent>
       </Dialog>
     </>

@@ -22,6 +22,7 @@ export type ExportRecord = {
   id: number;
   study_date: string;
   subject: string;
+  record_type: "learning" | "experiment";
   project_id: number | null;
   project_name: string | null;
   project_importance: number | null;
@@ -45,6 +46,7 @@ export type ExportExperiment = {
   project_id: number;
   project_name: string;
   name: string;
+  description: string;
   intensity_score: number;
   status: "todo" | "done";
   completed_at: string | null;
@@ -77,7 +79,7 @@ export async function getExportData(userId: string) {
      WHERE user_id = ?
      ORDER BY created_at DESC, id DESC`,
   ).bind(userId).all<ExportRedemption>(), db.prepare(
-    `SELECT e.id, e.project_id, p.name AS project_name, e.name, e.intensity_score, e.status,
+    `SELECT e.id, e.project_id, p.name AS project_name, e.name, e.description, e.intensity_score, e.status,
             e.completed_at, e.created_at, e.updated_at
      FROM project_experiments e
      JOIN projects p ON p.id = e.project_id AND p.user_id = e.user_id AND p.deleted_at IS NULL
@@ -89,7 +91,7 @@ export async function getExportData(userId: string) {
   const pageSize = 500;
   for (let offset = 0; ; offset += pageSize) {
     const page = await db.prepare(
-      `SELECT r.id, r.study_date, r.subject, r.project_id,
+      `SELECT r.id, r.study_date, r.subject, r.record_type, r.project_id,
               p.name AS project_name, p.importance AS project_importance, p.status AS project_status,
               r.intensity_score,
               COALESCE(p.importance, 0) * r.intensity_score AS points,
