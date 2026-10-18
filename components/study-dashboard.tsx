@@ -1110,7 +1110,7 @@ function ProjectDependencyEditor({
     }
   }
 
-  const candidates = projects.filter((item) => item.id !== project.id);
+  const candidates = projects.filter((item) => item.id !== project.id && !item.is_foundation);
   const count = dependencies.filter((edge) => edge.to_project_id === project.id).length;
 
   return (
@@ -1123,7 +1123,7 @@ function ProjectDependencyEditor({
           <DialogHeader>
             <p className="section-kicker">PROJECT DEPENDENCIES</p>
             <DialogTitle>设置“{project.name}”的前置项目</DialogTitle>
-            <DialogDescription>箭头从前置项目指向当前项目；前置项目完成后，再推进当前项目。</DialogDescription>
+            <DialogDescription>箭头从前置项目指向当前项目。第0区项目独立存在，不参与任何依赖连接。</DialogDescription>
           </DialogHeader>
           <label className="foundation-toggle">
             <input
@@ -1134,7 +1134,7 @@ function ProjectDependencyEditor({
                 if (event.target.checked) setSelected([]);
               }}
             />
-            <span><strong>设为第0区：最基础</strong><small>仅手动标记的项目会进入基础区；无前置依赖不代表属于基础区。</small></span>
+            <span><strong>设为第0区：最基础</strong><small>第0区没有前驱和后继，保存后会移除该项目的所有依赖连线。</small></span>
           </label>
           {candidates.length ? (
             <div className="dependency-options">
@@ -1159,10 +1159,10 @@ function ProjectDependencyEditor({
                 </label>
               ))}
             </div>
-          ) : <div className="points-empty dependency-empty"><FolderKanban /><p>至少创建两个项目后才能建立依赖。</p></div>}
+          ) : <div className="points-empty dependency-empty"><FolderKanban /><p>暂无可连接的项目；第0区项目不参与依赖连接。</p></div>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>取消</Button>
-            <Button type="button" onClick={() => void save()} disabled={saving || (!candidates.length && !isFoundation)}>{saving ? "保存中…" : "保存设置"}</Button>
+            <Button type="button" onClick={() => void save()} disabled={saving}>{saving ? "保存中…" : "保存设置"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1229,7 +1229,7 @@ function ProjectGraph({
           <div className="project-graph-canvas" style={{ width: graph.width, height: graph.height, transform: `scale(${zoom})` }}>
             <div className="project-graph-foundation" style={{ height: graph.height - 24 }}>
               <strong>第0区 · 最基础</strong>
-              <span>手动指定的最基础项目</span>
+              <span>独立项目 · 无前驱与后继</span>
               {!projects.some((project) => project.is_foundation) ? <small>尚未指定基础项目</small> : null}
             </div>
             <svg className="project-graph-edges" width={graph.width} height={graph.height} aria-hidden="true">

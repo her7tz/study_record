@@ -21,7 +21,7 @@ export function layoutProjectGraph(projects: StudyProject[], dependencies: Proje
   const edgeKeys = new Set<string>();
   const validEdges = dependencies.filter((edge) => {
     const key = `${edge.from_project_id}:${edge.to_project_id}`;
-    if (!byId.has(edge.from_project_id) || !byId.has(edge.to_project_id) || edge.from_project_id === edge.to_project_id || edgeKeys.has(key)) return false;
+    if (!byId.has(edge.from_project_id) || !byId.has(edge.to_project_id) || byId.get(edge.from_project_id)!.is_foundation || byId.get(edge.to_project_id)!.is_foundation || edge.from_project_id === edge.to_project_id || edgeKeys.has(key)) return false;
     edgeKeys.add(key);
     return true;
   }).sort((a, b) => a.from_project_id - b.from_project_id || a.to_project_id - b.to_project_id);
@@ -117,10 +117,10 @@ export function layoutProjectGraph(projects: StudyProject[], dependencies: Proje
   layers.splice(0, layers.length, ...best);
 
   const layerHeight = (layer: Vertex[]) => layer.reduce((height, vertex) => height + vertex.height, 0) + Math.max(0, layer.length - 1) * ROW_GAP;
-  const tallest = Math.max(0, ...layers.map(layerHeight));
+  const tallest = Math.max(0, ...layers.slice(1).map(layerHeight));
   const centers = new Map<string, number>();
   for (const layer of layers) {
-    let y = (tallest - layerHeight(layer)) / 2;
+    let y = layer === layers[0] ? 0 : (tallest - layerHeight(layer)) / 2;
     for (const vertex of layer) { centers.set(vertex.key, y + vertex.height / 2); y += vertex.height + ROW_GAP; }
   }
   // Align connected cards vertically, while preserving order and minimum spacing.

@@ -16,7 +16,7 @@ export async function listProjectDependencies(userId: string): Promise<ProjectDe
      FROM project_dependencies d
      JOIN projects source ON source.id = d.from_project_id AND source.user_id = d.user_id AND source.deleted_at IS NULL
      JOIN projects target ON target.id = d.to_project_id AND target.user_id = d.user_id AND target.deleted_at IS NULL
-     WHERE d.user_id = ?
+     WHERE d.user_id = ? AND source.is_foundation = 0 AND target.is_foundation = 0
      ORDER BY d.from_project_id, d.to_project_id`,
   ).bind(userId).all<ProjectDependency>();
   return result.results.map((edge) => ({
@@ -39,14 +39,19 @@ export async function replaceProjectDependencies(userId: string, projectId: numb
   if (prerequisiteIds.length) {
     const placeholders = prerequisiteIds.map(() => "?").join(", ");
     const owned = await db.prepare(
-      `SELECT id FROM projects WHERE user_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
-    ).bind(userId, ...prerequisiteIds).all<{ id: number }>();
+      `SELECT id, is_foundation FROM projects WHERE user_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
+    ).bind(userId, ...prerequisiteIds).all<{ id: number; is_foundation: number }>();
     if (owned.results.length !== prerequisiteIds.length) return { ok: false as const, reason: "前置项目中包含无效项目。" };
+    if (owned.results.some((project) => project.is_foundation)) return { ok: false as const, reason: "第0区项目不参与依赖连接，请先将它移出第0区。" };
   }
 
   const existing = await db.prepare(
-    "SELECT from_project_id, to_project_id FROM project_dependencies WHERE user_id = ? AND to_project_id != ?",
-  ).bind(userId, projectId).all<ProjectDependency>();
+    `SELECT d.from_project_id, d.to_project_id FROM project_dependencies d
+     JOIN projects source ON source.id = d.from_project_id AND source.user_id = d.user_id AND source.deleted_at IS NULL
+     JOIN projects target ON target.id = d.to_project_id AND target.user_id = d.user_id AND target.deleted_at IS NULL
+     WHERE d.user_id = ? AND d.to_project_id != ? AND (? = 0 OR d.from_project_id != ?)
+       AND source.is_foundation = 0 AND target.is_foundation = 0`,
+  ).bind(userId, projectId, isFoundation ? 1 : 0, projectId).all<ProjectDependency>();
   const edges = [
     ...existing.results,
     ...prerequisiteIds.map((fromProjectId) => ({ from_project_id: fromProjectId, to_project_id: projectId })),
@@ -75,11 +80,13 @@ export async function replaceProjectDependencies(userId: string, projectId: numb
   if (visited !== nodeIds.size) return { ok: false as const, reason: "这条依赖会形成循环，请调整前置项目。" };
 
   await db.batch([
-    db.prepare("DELETE FROM project_dependencies WHERE user_id = ? AND to_project_id = ?").bind(userId, projectId),
+    db.prepare("DELETE FROM project_dependencies WHERE user_id = ? AND (to_project_id = ? OR (? = 1 AND from_project_id = ?))").bind(userId, projectId, isFoundation ? 1 : 0, projectId),
     db.prepare("UPDATE projects SET is_foundation = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND deleted_at IS NULL").bind(isFoundation ? 1 : 0, projectId, userId),
     ...prerequisiteIds.map((fromProjectId) => db.prepare(
-      "INSERT INTO project_dependencies (user_id, from_project_id, to_project_id) VALUES (?, ?, ?)",
-    ).bind(userId, fromProjectId, projectId)),
+      `INSERT INTO project_dependencies (user_id, from_project_id, to_project_id)
+       SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND is_foundation = 0)
+         AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND is_foundation = 0)`,
+    ).bind(userId, fromProjectId, projectId, fromProjectId, userId, projectId, userId)),
   ]);
   return { ok: true as const, edges: await listProjectDependencies(userId) };
 }

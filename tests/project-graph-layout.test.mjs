@@ -50,6 +50,15 @@ test("only manually selected foundations occupy the left zone", () => {
   assertGeometry(g, 3);
 });
 
+test("foundation projects have neither predecessors nor successors", () => {
+  const g = layoutProjectGraph([project(1, { is_foundation: true }), project(2), project(3)], [edge(1, 2), edge(2, 3), edge(3, 1)]);
+  assert.equal(g.edges.length, 1);
+  assert.equal(g.edges[0].from_project_id, 2);
+  assert.equal(g.edges[0].to_project_id, 3);
+  assert.equal(node(g, 1).y, 82);
+  assertGeometry(g, 3);
+});
+
 test("new dependencies automatically rearrange the graph", () => {
   const p = [project(1), project(2), project(3)];
   const before = layoutProjectGraph(p, [edge(1, 2)]);
