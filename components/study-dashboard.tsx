@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -18,6 +18,8 @@ import {
   History,
   LayoutDashboard,
   LogOut,
+  Maximize2,
+  Minus,
   NotebookPen,
   Pencil,
   Plus,
@@ -73,6 +75,7 @@ import { PointRedemptionDialog } from "@/components/point-redemption-dialog";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
 import type { StudyRecord, StudyRecordInput, StudyRecordPage, StudyRecordType } from "@/lib/study-records";
 import type { ProjectDependency } from "@/lib/project-dependencies";
+import { layoutProjectGraph } from "@/lib/project-graph-layout";
 import { projectColors, projectStatuses, type ProjectStatus, type StudyProject, type StudyProjectInput } from "@/lib/project-model";
 import type { TrashItem } from "@/lib/trash";
 
@@ -1167,58 +1170,6 @@ function ProjectDependencyEditor({
   );
 }
 
-type ProjectGraphNode = {
-  project: StudyProject;
-  x: number;
-  y: number;
-};
-
-function layoutProjectGraph(projects: StudyProject[], dependencies: ProjectDependency[]) {
-  const byId = new Map(projects.map((project) => [project.id, project]));
-  const outgoing = new Map<number, number[]>();
-  const indegree = new Map(projects.map((project) => [project.id, 0]));
-  for (const edge of dependencies) {
-    if (!byId.has(edge.from_project_id) || !byId.has(edge.to_project_id)) continue;
-    outgoing.set(edge.from_project_id, [...(outgoing.get(edge.from_project_id) || []), edge.to_project_id]);
-    indegree.set(edge.to_project_id, (indegree.get(edge.to_project_id) || 0) + 1);
-  }
-
-  const depth = new Map(projects.map((project) => [project.id, project.is_foundation ? 0 : 1]));
-  const queue = projects.filter((project) => indegree.get(project.id) === 0).sort((a, b) => a.sort_order - b.sort_order).map((project) => project.id);
-  while (queue.length) {
-    const current = queue.shift()!;
-    for (const next of outgoing.get(current) || []) {
-      depth.set(next, Math.max(depth.get(next) || 0, (depth.get(current) || 0) + 1));
-      const remaining = (indegree.get(next) || 0) - 1;
-      indegree.set(next, remaining);
-      if (remaining === 0) queue.push(next);
-    }
-  }
-
-  const layers = new Map<number, StudyProject[]>([[0, []]]);
-  for (const project of projects) {
-    const layer = depth.get(project.id) || 0;
-    layers.set(layer, [...(layers.get(layer) || []), project]);
-  }
-  for (const layer of layers.values()) layer.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
-  const nodes: ProjectGraphNode[] = [];
-  const columns: { level: number; x: number; title: string; description: string }[] = [];
-  for (const [layerIndex, layer] of [...layers.entries()].sort((a, b) => a[0] - b[0])) {
-    const x = layerIndex === 0 ? 18 : 380 + (layerIndex - 1) * 340;
-    columns.push({
-      level: layerIndex,
-      x,
-      title: layerIndex === 0 ? "第0区 · 最基础" : `第${layerIndex}级`,
-      description: layerIndex === 0 ? "手动指定的最基础项目" : "依赖链中的后续项目",
-    });
-    layer.forEach((project, rowIndex) => nodes.push({ project, x: x + 14, y: 76 + rowIndex * 206 }));
-  }
-  const lastColumn = columns[columns.length - 1];
-  const width = Math.max(760, lastColumn.x + 310 + 24);
-  const height = Math.max(350, Math.max(...[...layers.values()].map((layer) => layer.length)) * 206 + 98);
-  return { nodes, columns, width, height };
-}
-
 function ProjectGraph({
   projects,
   dependencies,
@@ -1238,64 +1189,78 @@ function ProjectGraph({
   onDeleted: (id: number) => void;
   onView: (id: number) => void;
 }) {
-  const graph = layoutProjectGraph(projects, dependencies);
-  const hasFoundation = projects.some((project) => project.is_foundation);
-  const positions = new Map(graph.nodes.map((node) => [node.project.id, node]));
-  const edges = dependencies.flatMap((edge) => {
-    const source = positions.get(edge.from_project_id);
-    const target = positions.get(edge.to_project_id);
-    if (!source || !target) return [];
-    const startX = source.x + 262;
-    const startY = source.y + 80;
-    const endX = target.x;
-    const endY = target.y + 80;
-    const curveX = Math.max(48, (endX - startX) * 0.46);
-    return [{ ...edge, path: `M ${startX} ${startY} C ${startX + curveX} ${startY}, ${endX - curveX} ${endY}, ${endX} ${endY}` }];
-  });
+  const graph = useMemo(() => layoutProjectGraph(projects, dependencies), [projects, dependencies]);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const topology = `${projects.map((p) => `${p.id}:${p.is_foundation}`).join(",")}|${dependencies.map((e) => `${e.from_project_id}:${e.to_project_id}`).join(",")}`;
+  const fitGraph = useCallback((minimum = 0.25) => {
+    if (!scrollRef.current) return;
+    const width = scrollRef.current.clientWidth - 24;
+    const height = Math.max(300, window.innerHeight * 0.7 - 24);
+    setZoom(Math.max(minimum, Math.min(1, width / graph.width, height / graph.height)));
+  }, [graph.width, graph.height]);
+
+  useEffect(() => {
+    const viewport = scrollRef.current;
+    if (!viewport) return;
+    const fit = () => fitGraph(0.6);
+    fit();
+    viewport.scrollTo({ left: 0, top: 0 });
+    let width = viewport.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = viewport.getBoundingClientRect().width;
+      if (Math.abs(nextWidth - width) > 1) { width = nextWidth; fit(); }
+    });
+    observer.observe(viewport);
+    window.addEventListener("resize", fit);
+    return () => { observer.disconnect(); window.removeEventListener("resize", fit); };
+  }, [fitGraph, topology]);
 
   return (
-    <div className="project-graph-scroll" aria-label="项目依赖有向图">
-      <div className="project-graph-canvas" style={{ width: graph.width, height: graph.height }}>
-        <div className="project-graph-columns" aria-hidden="true">
-          {graph.columns.map((column) => (
-            <div
-              className={`project-graph-column${column.level === 0 ? " foundation" : ""}`}
-              key={column.level}
-              style={{ left: column.x, height: graph.height - 24 }}
-            >
-              <strong>{column.title}</strong>
-              <span>{column.description}</span>
-              {column.level === 0 && !hasFoundation ? <small>尚未指定基础项目</small> : null}
+    <div className="project-graph">
+      <div className="project-graph-controls" role="group" aria-label="关系图缩放">
+        <button type="button" onClick={() => setZoom((value) => Math.max(0.25, value - 0.1))} disabled={zoom <= 0.25} aria-label="缩小关系图"><Minus /></button>
+        <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+        <button type="button" onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))} disabled={zoom >= 1.5} aria-label="放大关系图"><Plus /></button>
+        <button type="button" className="graph-fit" onClick={() => fitGraph()}><Maximize2 />适应画布</button>
+      </div>
+      <div ref={scrollRef} className="project-graph-scroll" aria-label="项目依赖有向图" tabIndex={0}>
+        <div className="project-graph-stage" style={{ width: graph.width * zoom, height: graph.height * zoom }}>
+          <div className="project-graph-canvas" style={{ width: graph.width, height: graph.height, transform: `scale(${zoom})` }}>
+            <div className="project-graph-foundation" style={{ height: graph.height - 24 }}>
+              <strong>第0区 · 最基础</strong>
+              <span>手动指定的最基础项目</span>
+              {!projects.some((project) => project.is_foundation) ? <small>尚未指定基础项目</small> : null}
             </div>
-          ))}
+            <svg className="project-graph-edges" width={graph.width} height={graph.height} aria-hidden="true">
+              <defs><marker id="project-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+              {graph.edges.map((edge) => <path key={`${edge.from_project_id}-${edge.to_project_id}`} d={edge.path} markerEnd="url(#project-arrow)" />)}
+            </svg>
+            {graph.nodes.map(({ project, x, y }) => {
+              const prerequisites = dependencies.filter((edge) => edge.to_project_id === project.id).length;
+              return (
+                <article className={`project-graph-node project-${project.color}`} key={project.id} style={{ left: x, top: y }}>
+                  <div className="project-graph-node-top">
+                    <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
+                    <span className="project-importance"><Star />{project.importance}</span>
+                    <div className="record-actions">
+                      <ProjectEditor project={project} compact onSaved={onSaved} />
+                      <DeleteProject project={project} onDeleted={onDeleted} />
+                    </div>
+                  </div>
+                  <h2 title={project.name}>{project.name}</h2>
+                  <p>{project.goal || project.description || "尚未设置项目目标"}</p>
+                  <div className="project-graph-node-bottom">
+                    <ProjectDependencyEditor project={project} projects={projects} dependencies={dependencies} onSaved={onDependenciesChange} onFoundationChanged={onFoundationChanged} compact />
+                    <small>{project.is_foundation ? "最基础" : prerequisites ? `${prerequisites} 个前置项目` : "无前置依赖"}</small>
+                    <ProjectExperiments project={project} compact onCountsChange={onExperimentCountsChange} />
+                    <button type="button" className="project-view" onClick={() => onView(project.id)}>查看记录 <ChevronRight /></button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
-        <svg className="project-graph-edges" width={graph.width} height={graph.height} aria-hidden="true">
-          <defs><marker id="project-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
-          {edges.map((edge) => <path key={`${edge.from_project_id}-${edge.to_project_id}`} d={edge.path} markerEnd="url(#project-arrow)" />)}
-        </svg>
-        {graph.nodes.map(({ project, x, y }) => {
-          const prerequisites = dependencies.filter((edge) => edge.to_project_id === project.id).length;
-          return (
-            <article className={`project-graph-node project-${project.color}`} key={project.id} style={{ left: x, top: y }}>
-              <div className="project-graph-node-top">
-                <span className={`project-status status-${project.status}`}>{statusLabels[project.status]}</span>
-                <span className="project-importance"><Star />{project.importance}</span>
-                <div className="record-actions">
-                  <ProjectEditor project={project} compact onSaved={onSaved} />
-                  <DeleteProject project={project} onDeleted={onDeleted} />
-                </div>
-              </div>
-              <h2 title={project.name}>{project.name}</h2>
-              <p>{project.goal || project.description || "尚未设置项目目标"}</p>
-              <div className="project-graph-node-bottom">
-                <ProjectDependencyEditor project={project} projects={projects} dependencies={dependencies} onSaved={onDependenciesChange} onFoundationChanged={onFoundationChanged} compact />
-                <small>{project.is_foundation ? "最基础" : prerequisites ? `${prerequisites} 个前置项目` : "无前置依赖"}</small>
-                <ProjectExperiments project={project} compact onCountsChange={onExperimentCountsChange} />
-                <button type="button" className="project-view" onClick={() => onView(project.id)}>查看记录 <ChevronRight /></button>
-              </div>
-            </article>
-          );
-        })}
       </div>
     </div>
   );
@@ -1399,7 +1364,7 @@ function ProjectBoard({
   return (
     <div className="project-board">
       <div className="project-toolbar">
-          <div><strong>{boardMode === "graph" ? "项目依赖有向图" : "按完成状态分类"}</strong><span>{boardMode === "graph" ? "左侧第0区为最基础项目；箭头沿依赖关系指向后续级别" : "每类项目可独立查看和手动排序"}</span></div>
+          <div><strong>{boardMode === "graph" ? "项目依赖有向图" : "按完成状态分类"}</strong><span>{boardMode === "graph" ? "仅保留左侧第0区；增删依赖连线后自动整理布局" : "每类项目可独立查看和手动排序"}</span></div>
         <div className="project-toolbar-actions">
           <div className="project-view-switch" role="group" aria-label="项目视图">
             <button type="button" className={boardMode === "graph" ? "active" : ""} aria-pressed={boardMode === "graph"} onClick={() => setBoardMode("graph")}><GitBranch />关系图</button>
