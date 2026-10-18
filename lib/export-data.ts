@@ -40,6 +40,7 @@ export type ExportRedemption = {
   reward_name: string;
   points: number;
   created_at: string;
+  updated_at: string;
 };
 
 export type ExportExperiment = {
@@ -75,9 +76,9 @@ export async function getExportData(userId: string) {
      GROUP BY p.id
      ORDER BY p.updated_at DESC, p.id DESC`,
   ).bind(userId).all<ExportProject>(), db.prepare(
-    `SELECT id, reward_name, points, created_at
+    `SELECT id, reward_name, points, created_at, updated_at
      FROM point_redemptions
-     WHERE user_id = ?
+     WHERE user_id = ? AND deleted_at IS NULL
      ORDER BY created_at DESC, id DESC`,
   ).bind(userId).all<ExportRedemption>(), db.prepare(
     `SELECT e.id, e.project_id, p.name AS project_name, e.name, e.description, e.intensity_score, e.status,
@@ -148,7 +149,7 @@ export async function getExportData(userId: string) {
       total_intensity: normalizedRecords.reduce((sum, record) => sum + record.intensity_score, 0),
       total_points: totalPoints,
       redeemed_points: redeemedPoints,
-      available_points: Math.max(totalPoints - redeemedPoints, 0),
+      available_points: totalPoints - redeemedPoints,
       total_credits: projects.reduce((sum, project) => sum + project.credits, 0),
     },
   };

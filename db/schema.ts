@@ -80,7 +80,9 @@ export const pointRedemptions = sqliteTable(
     userId: text("user_id").notNull(),
     rewardName: text("reward_name").notNull(),
     points: integer("points").notNull(),
+    deletedAt: text("deleted_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index("idx_point_redemptions_user_created").on(table.userId, table.createdAt)],
 );

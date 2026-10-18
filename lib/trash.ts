@@ -33,7 +33,16 @@ export type TrashExperiment = {
   status: "todo" | "done";
 };
 
-export type TrashItem = TrashRecord | TrashProject | TrashExperiment;
+export type TrashRedemption = {
+  kind: "redemption";
+  id: number;
+  title: string;
+  points: number;
+  deleted_at: string;
+  expires_at: string;
+};
+
+export type TrashItem = TrashRecord | TrashProject | TrashExperiment | TrashRedemption;
 
 function database() {
   if (!env.DB) throw new Error("回收站暂时不可用。");
@@ -52,6 +61,7 @@ async function purgeExpired(userId: string) {
   const db = database();
   const cutoff = cutoffDate();
   await db.batch([
+    db.prepare("DELETE FROM point_redemptions WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
     db.prepare("DELETE FROM project_experiments WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
     db.prepare("DELETE FROM study_records WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
     db.prepare("DELETE FROM projects WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, cutoff),
@@ -62,7 +72,7 @@ export async function listTrash(userId: string): Promise<TrashItem[]> {
   await purgeExpired(userId);
   const db = database();
   const cutoff = cutoffDate();
-  const [records, projects, experiments] = await Promise.all([
+  const [records, projects, experiments, redemptions] = await Promise.all([
     db.prepare(
       `SELECT r.id, r.subject AS title, r.study_date, r.deleted_at, p.name AS project_name
        FROM study_records r
@@ -93,18 +103,31 @@ export async function listTrash(userId: string): Promise<TrashItem[]> {
        WHERE e.user_id = ? AND e.deleted_at IS NOT NULL AND e.deleted_at >= ?
        ORDER BY e.deleted_at DESC, e.id DESC`,
     ).bind(userId, cutoff).all<Omit<TrashExperiment, "kind" | "expires_at">>(),
+    db.prepare(
+      `SELECT id, reward_name AS title, points, deleted_at FROM point_redemptions
+       WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?
+       ORDER BY deleted_at DESC, id DESC`,
+    ).bind(userId, cutoff).all<Omit<TrashRedemption, "kind" | "expires_at">>(),
   ]);
 
   return [
     ...records.results.map((record) => ({ ...record, kind: "record" as const, expires_at: expiryDate(record.deleted_at) })),
     ...projects.results.map((project) => ({ ...project, kind: "project" as const, record_count: Number(project.record_count), experiment_count: Number(project.experiment_count), expires_at: expiryDate(project.deleted_at) })),
     ...experiments.results.map((experiment) => ({ ...experiment, kind: "experiment" as const, intensity_score: Number(experiment.intensity_score), expires_at: expiryDate(experiment.deleted_at) })),
+    ...redemptions.results.map((redemption) => ({ ...redemption, kind: "redemption" as const, points: Number(redemption.points), expires_at: expiryDate(redemption.deleted_at) })),
   ].sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
 }
 
-export async function restoreTrashItem(userId: string, kind: "record" | "project" | "experiment", id: number) {
+export async function restoreTrashItem(userId: string, kind: TrashItem["kind"], id: number) {
   const db = database();
   const cutoff = cutoffDate();
+  if (kind === "redemption") {
+    const result = await db.prepare(
+      `UPDATE point_redemptions SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?`,
+    ).bind(id, userId, cutoff).run();
+    return result.meta.changes > 0;
+  }
   if (kind === "experiment") {
     const experiment = await db.prepare(`SELECT deleted_at, status FROM project_experiments
       WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at >= ?

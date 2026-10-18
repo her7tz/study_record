@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as { kind?: unknown; id?: unknown };
     const kind = payload.kind;
     const id = Number(payload.id);
-    if ((kind !== "record" && kind !== "project" && kind !== "experiment") || !Number.isInteger(id) || id < 1) {
+    if ((kind !== "record" && kind !== "project" && kind !== "experiment" && kind !== "redemption") || !Number.isSafeInteger(id) || id < 1) {
       return jsonError("恢复信息无效。", 400);
     }
     const restored = await restoreTrashItem(user.userId, kind, id);

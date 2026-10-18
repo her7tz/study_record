@@ -69,6 +69,7 @@ import { ProjectExperiments } from "@/components/project-experiments";
 import { ProjectExperimentHistory } from "@/components/project-experiment-history";
 import { formatStudyDate } from "@/lib/date";
 import type { PointRedemption } from "@/lib/point-redemptions";
+import { PointRedemptionDialog } from "@/components/point-redemption-dialog";
 import type { HeatmapDay, StudyAnalytics } from "@/lib/study-analytics";
 import type { StudyRecord, StudyRecordInput, StudyRecordPage, StudyRecordType } from "@/lib/study-records";
 import type { ProjectDependency } from "@/lib/project-dependencies";
@@ -383,7 +384,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
       });
       setItems((current) => current.filter((entry) => `${entry.kind}:${entry.id}` !== key));
       onRestored();
-      toast.success(item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "记录已恢复");
+      toast.success(item.kind === "redemption" ? "兑换记录已恢复，积分已重新扣除" : item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "记录已恢复");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "恢复失败，请稍后再试。");
     } finally {
@@ -402,9 +403,9 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
             return (
               <article className="trash-item" key={key}>
                 <div className="trash-item-copy">
-                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : "记录"}</span>
+                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : item.kind === "redemption" ? "积分兑换" : "记录"}</span>
                   <h2>{item.title}</h2>
-                  {item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : item.kind === "experiment" ? <p>{item.project_name} · 强度 {item.intensity_score} · {item.status === "todo" ? "待做" : "已完成"}</p> : <p>{item.record_count} 条记录、{item.experiment_count} 个实验会随项目一起恢复</p>}
+                  {item.kind === "redemption" ? <p>恢复后将重新扣除 {item.points} 积分，余额可为负数。</p> : item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : item.kind === "experiment" ? <p>{item.project_name} · 强度 {item.intensity_score} · {item.status === "todo" ? "待做" : "已完成"}</p> : <p>{item.record_count} 条记录、{item.experiment_count} 个实验会随项目一起恢复</p>}
                   <small>恢复期限至 {deadline}</small>
                 </div>
                 <Button type="button" variant="outline" onClick={() => void restore(item)} disabled={restoringId !== null}>
@@ -415,7 +416,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
           })}
         </div>
       ) : (
-        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验和记录会显示在这里。</p></div>
+        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验、记录和积分兑换会显示在这里。</p></div>
       )}
     </section>
   );
@@ -678,105 +679,6 @@ function PointDistributionDialog({
             <Button type="button" onClick={onRedeem}><Star />兑换积分</Button>
           </DialogFooter>
         ) : null}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function PointRedemptionDialog({
-  open,
-  onClose,
-  onRedeemed,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onRedeemed: () => void;
-}) {
-  const [availablePoints, setAvailablePoints] = useState(0);
-  const [redemptions, setRedemptions] = useState<PointRedemption[]>([]);
-  const [rewardName, setRewardName] = useState("");
-  const [points, setPoints] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const loadRedemptions = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await requestJson("/api/redemptions", { method: "GET" });
-      setAvailablePoints(Number(result.available_points || 0));
-      setRedemptions(result.redemptions || []);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "兑换记录加载失败。");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(() => { void loadRedemptions(); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadRedemptions, open]);
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
-    try {
-      await requestJson("/api/redemptions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reward_name: rewardName, points: Number(points) }),
-      });
-      setRewardName("");
-      setPoints("");
-      await loadRedemptions();
-      onRedeemed();
-      toast.success("积分兑换已记录");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "兑换失败，请稍后再试。");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(next) => !next && !saving && onClose()}>
-      <DialogContent className="redemption-dialog sm:max-w-[520px]">
-        <DialogHeader>
-          <p className="section-kicker">REDEEM POINTS</p>
-          <DialogTitle>积分兑换</DialogTitle>
-          <DialogDescription>记录你用积分兑换的奖励。兑换后会从可用余额中扣除。</DialogDescription>
-        </DialogHeader>
-        <div className="redemption-balance"><span>当前可用积分</span><strong>{loading ? "…" : availablePoints}</strong></div>
-        <form className="redemption-form" onSubmit={submit}>
-          <div className="form-row">
-            <Label htmlFor="redemption-reward">兑换内容</Label>
-            <Input id="redemption-reward" value={rewardName} maxLength={80} onChange={(event) => setRewardName(event.target.value)} placeholder="例如：看一场电影" required />
-          </div>
-          <div className="form-row">
-            <Label htmlFor="redemption-points">使用积分</Label>
-            <Input id="redemption-points" type="number" min={1} max={1000000} step={1} value={points} onChange={(event) => setPoints(event.target.value)} placeholder="输入整数" required />
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={saving || loading || !rewardName.trim() || !points || Number(points) > availablePoints}>
-              {saving ? "正在保存…" : "确认兑换"}
-            </Button>
-          </DialogFooter>
-          {points && Number(points) > availablePoints ? <p className="redemption-error">可用积分不足。</p> : null}
-        </form>
-        <section className="redemption-history" aria-labelledby="redemption-history-title">
-          <div className="redemption-history-heading"><h3 id="redemption-history-title">最近兑换</h3><span>最多显示 50 条</span></div>
-          {loading ? <p className="redemption-empty">正在读取兑换记录…</p> : redemptions.length ? (
-            <div className="redemption-list">
-              {redemptions.map((item) => (
-                <article key={item.id}>
-                  <div><strong>{item.reward_name}</strong><small>{item.created_at.slice(0, 16).replace("T", " ")}</small></div>
-                  <span>−{item.points} 积分</span>
-                </article>
-              ))}
-            </div>
-          ) : <p className="redemption-empty">还没有兑换记录。</p>}
-        </section>
       </DialogContent>
     </Dialog>
   );
@@ -1834,12 +1736,12 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             onClose={() => setPointsDialog(null)}
             onRedeem={() => setPointsDialog("redemption")}
           />
-          <PointRedemptionDialog open={pointsDialog === "redemption"} onClose={() => setPointsDialog(null)} onRedeemed={() => void refreshAnalytics()} />
+          <PointRedemptionDialog open={pointsDialog === "redemption"} onClose={() => setPointsDialog(null)} onChanged={() => { setHistoryRevision((current) => current + 1); void refreshAnalytics(); }} onOpenTrash={() => { setPointsDialog(null); setHistorySection("trash"); setView("history"); }} />
         </TabsContent>
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目和记录可在删除后 7 天内恢复。</p>}</div>
+            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目、实验、记录和积分兑换可在删除后 7 天内恢复。</p>}</div>
             {historySection === "records" ? <div className="header-actions">
               <a className="export-button" href="/api/export?format=csv" download><Download />导出 CSV</a>
               <a className="export-button" href="/api/export?format=json" download><Download />导出 JSON</a>

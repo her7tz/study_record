@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       -redemption.points,
       "",
       redemption.created_at,
-      "",
+      redemption.updated_at,
       "",
     ]);
     const csv = `\uFEFF${[headers, ...recordRows, ...experimentRows, ...redemptionRows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
