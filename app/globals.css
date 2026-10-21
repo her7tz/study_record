@@ -102,7 +102,8 @@ button { cursor: pointer; }
   width: 256px;
   flex-direction: column;
   padding: 32px 24px 24px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background:
     linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
@@ -136,13 +137,15 @@ button { cursor: pointer; }
 .side-nav [data-slot="tabs-trigger"] svg { width: 18px; }
 .side-nav [data-slot="tabs-trigger"][data-state="active"] { background: linear-gradient(90deg, #173261, #102440); color: #ffffff; box-shadow: inset 3px 0 #72cfd2; }
 
-.sidebar-experiments { position: relative; z-index: 1; width: 100%; margin-top: auto; padding: 18px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(12, 30, 58, .74); text-align: left; backdrop-filter: blur(8px); }
-.sidebar-experiments:hover, .sidebar-experiments[aria-current="page"] { border-color: #72cfd2; background: #173261; }
-.sidebar-experiments:focus-visible { outline: 2px solid #72cfd2; outline-offset: 3px; }
-.sidebar-experiments > span { display: flex; align-items: center; gap: 7px; color: #b8c2d3; font-size: .8rem; }
-.sidebar-experiments svg { width: 16px; }
-.sidebar-experiments > strong { display: block; margin: 9px 0 13px; color: #f4f7fb; font-size: 1.15rem; }
-.sidebar-experiments > small { display: flex; align-items: center; justify-content: space-between; color: #a4cfd6; font-size: .73rem; }
+.sidebar-shortcuts { position: relative; z-index: 1; display: grid; flex-shrink: 0; gap: 12px; margin-top: auto; padding-top: 24px; }
+.sidebar-shortcut { width: 100%; padding: 18px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(12, 30, 58, .74); text-align: left; backdrop-filter: blur(8px); }
+.sidebar-shortcut:hover, .sidebar-shortcut[aria-current="page"] { border-color: #72cfd2; background: #173261; }
+.sidebar-shortcut:focus-visible { outline: 2px solid #72cfd2; outline-offset: 3px; }
+.sidebar-shortcut > span { display: flex; align-items: center; gap: 7px; color: #b8c2d3; font-size: .8rem; }
+.sidebar-shortcut svg { width: 16px; }
+.sidebar-shortcut > strong { display: block; margin: 9px 0 13px; color: #f4f7fb; font-size: 1.15rem; overflow-wrap: anywhere; }
+.sidebar-shortcut > small { display: flex; align-items: center; justify-content: space-between; color: #a4cfd6; font-size: .73rem; }
+.sidebar > .brand-lockup, .sidebar > .side-nav, .sidebar > .account-card { flex-shrink: 0; }
 
 .account-card { position: relative; z-index: 1; display: grid; grid-template-columns: 35px minmax(0,1fr) 30px; align-items: center; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.08); }
 .avatar { display: grid; width: 35px; height: 35px; place-items: center; border-radius: 9px; background: #1c3a6d; color: #b9f1f1; font-weight: 800; }

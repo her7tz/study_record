@@ -29,6 +29,7 @@ import {
   Target,
   TrendingUp,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -1658,11 +1659,18 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <TabsTrigger value="history"><History />历史记录</TabsTrigger>
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
         </TabsList>
-        <button type="button" className="sidebar-experiments" aria-current={view === "experiments" ? "page" : undefined} onClick={() => setView("experiments")}>
-          <span><FlaskConical />待做实验</span>
-          <strong>{loadError ? "查看列表" : `${pendingExperimentCount} 个待做`}</strong>
-          <small>打开总目录<ChevronRight /></small>
-        </button>
+        <div className="sidebar-shortcuts">
+          <button type="button" className="sidebar-shortcut sidebar-points" aria-haspopup="dialog" onClick={() => setPointsDialog("redemption")}>
+            <span><Wallet />剩余积分</span>
+            <strong aria-live="polite">{loadError ? "—" : analytics.available_points}</strong>
+            <small>积分兑换<ChevronRight /></small>
+          </button>
+          <button type="button" className="sidebar-shortcut sidebar-experiments" aria-current={view === "experiments" ? "page" : undefined} onClick={() => setView("experiments")}>
+            <span><FlaskConical />待做实验</span>
+            <strong>{loadError ? "查看列表" : `${pendingExperimentCount} 个待做`}</strong>
+            <small>打开总目录<ChevronRight /></small>
+          </button>
+        </div>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
           <span><small>学习账户</small><strong title={user.email}>{user.email}</strong></span>
@@ -1701,7 +1709,6 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             onClose={() => setPointsDialog(null)}
             onRedeem={() => setPointsDialog("redemption")}
           />
-          <PointRedemptionDialog open={pointsDialog === "redemption"} onClose={() => setPointsDialog(null)} onChanged={() => { setHistoryRevision((current) => current + 1); void refreshAnalytics(); }} onOpenTrash={() => { setPointsDialog(null); setHistorySection("trash"); setView("history"); }} />
         </TabsContent>
 
         <TabsContent value="history" className="view-content">
@@ -1770,6 +1777,8 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
         </TabsContent>
 
       </main>
+
+      <PointRedemptionDialog open={pointsDialog === "redemption"} onClose={() => setPointsDialog(null)} onChanged={() => { setHistoryRevision((current) => current + 1); void refreshAnalytics(); }} onOpenTrash={() => { setPointsDialog(null); setHistorySection("trash"); setView("history"); }} />
 
       <TabsList className="mobile-nav">
         <TabsTrigger value="dashboard"><LayoutDashboard />今日</TabsTrigger>

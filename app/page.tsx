@@ -20,6 +20,7 @@ export default async function Home() {
     total_active_days: 0,
     total_intensity: 0,
     total_points: 0,
+    available_points: 0,
     overall_average: 0,
     today_count: 0,
     today_average: 0,

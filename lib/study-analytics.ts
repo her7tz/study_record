@@ -27,6 +27,7 @@ export type StudyAnalytics = {
   total_intensity: number;
   total_points: number;
   overall_average: number;
+  available_points: number;
   today_count: number;
   today_average: number;
   today_intensity: number;
@@ -142,6 +143,8 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
          COUNT(DISTINCT study_date) AS total_active_days,
          COALESCE(SUM(intensity_score), 0) AS total_intensity,
          COALESCE(SUM(COALESCE(p.importance, 0) * intensity_score), 0) AS total_points,
+         COALESCE(SUM(COALESCE(p.importance, 0) * intensity_score), 0) -
+           (SELECT COALESCE(SUM(points), 0) FROM point_redemptions WHERE user_id = ? AND deleted_at IS NULL) AS available_points,
          COALESCE(AVG(intensity_score), 0) AS overall_average,
          SUM(CASE WHEN study_date = ? THEN 1 ELSE 0 END) AS today_count,
          COALESCE(AVG(CASE WHEN study_date = ? THEN intensity_score END), 0) AS today_average,
@@ -154,7 +157,7 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
        FROM study_records r
        LEFT JOIN projects p ON p.id = r.project_id AND p.user_id = r.user_id AND p.deleted_at IS NULL
        WHERE r.user_id = ? AND r.deleted_at IS NULL`,
-    ).bind(today, today, today, today, weekStart, today, weekStart, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap" | "total_credits" | "completed_projects">>(),
+    ).bind(userId, today, today, today, today, weekStart, today, weekStart, today, weekStart, today, weekStart, today, userId).first<Omit<StudyAnalytics, "current_streak" | "longest_streak" | "trend" | "heatmap" | "total_credits" | "completed_projects">>(),
     db.prepare(
       `SELECT DISTINCT study_date AS date
        FROM study_records
@@ -195,6 +198,7 @@ export async function getStudyAnalytics(userId: string, today: string): Promise<
     total_active_days: Number(metrics?.total_active_days || 0),
     total_intensity: Number(metrics?.total_intensity || 0),
     total_points: Number(metrics?.total_points || 0),
+    available_points: Number(metrics?.available_points || 0),
     overall_average: Number(metrics?.overall_average || 0),
     today_count: Number(metrics?.today_count || 0),
     today_average: Number(metrics?.today_average || 0),
