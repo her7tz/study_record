@@ -190,6 +190,8 @@ function RecordEditor({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [values, setValues] = useState(() => recordInput(record, today, defaultType));
+  // Keep an existing record's association visible when its project is no longer active.
+  const projectOptions = projects.filter((project) => project.status === "active" || project.id === record?.project_id);
 
   function begin() {
     setValues(recordInput(record, today, defaultType));
@@ -267,16 +269,16 @@ function RecordEditor({
             />
           </div>
           <div className="form-row">
-            <div className="label-line"><Label>所属项目</Label><span>选填</span></div>
+            <div className="label-line"><Label htmlFor={`record-project-${record?.id || "new"}`}>所属项目</Label><span>选填</span></div>
             <Select
               disabled={Boolean(record?.experiment_id)}
               value={values.project_id === null ? "none" : String(values.project_id)}
               onValueChange={(value) => setValues({ ...values, project_id: value === "none" ? null : Number(value) })}
             >
-              <SelectTrigger className="project-select"><SelectValue placeholder="选择项目" /></SelectTrigger>
+              <SelectTrigger id={`record-project-${record?.id || "new"}`} className="project-select"><SelectValue placeholder="选择项目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">未分类</SelectItem>
-                {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name} · 重要度 {project.importance}</SelectItem>)}
+                {projectOptions.map((project) => <SelectItem key={project.id} value={String(project.id)} disabled={project.status !== "active"}>{project.name} · 重要度 {project.importance}{project.status !== "active" ? ` · ${statusLabels[project.status]}` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
