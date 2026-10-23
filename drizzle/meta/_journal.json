@@ -106,6 +106,13 @@
       "when": 1792321135122,
       "tag": "0014_isolate-foundation-projects",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1792720253786,
+      "tag": "0015_ambiguous_vanisher",
+      "breakpoints": true
     }
   ]
 }

@@ -39,6 +39,8 @@ export type StudyRecordQuery = {
   query?: string;
   projectId?: number | null;
   date?: string;
+  from?: string;
+  to?: string;
   recordType?: StudyRecordType;
 };
 
@@ -85,6 +87,9 @@ export async function listRecords(userId: string, options: StudyRecordQuery = {}
     conditions.push("LOWER(r.subject || ' ' || r.note || ' ' || COALESCE(p.name, '')) LIKE ?");
     bindings.push(`%${options.query.toLowerCase()}%`);
   }
+
+  if (options.from) { conditions.push("r.study_date >= ?"); bindings.push(options.from); }
+  if (options.to) { conditions.push("r.study_date <= ?"); bindings.push(options.to); }
 
   const where = conditions.join(" AND ");
   const db = database();

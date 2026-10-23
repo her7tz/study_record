@@ -87,6 +87,24 @@ export const pointRedemptions = sqliteTable(
   (table) => [index("idx_point_redemptions_user_created").on(table.userId, table.createdAt)],
 );
 
+export const agentAuthorizations = sqliteTable("agent_authorizations", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  clientName: text("client_name").notNull(),
+  userId: text("user_id"),
+  requestIpHash: text("request_ip_hash").notNull(),
+  createdAt: integer("created_at").notNull(),
+  requestExpiresAt: integer("request_expires_at").notNull(),
+  authorizedAt: integer("authorized_at"),
+  expiresAt: integer("expires_at"),
+  revokedAt: integer("revoked_at"),
+}, table => [
+  uniqueIndex("idx_agent_authorizations_token").on(table.tokenHash),
+  index("idx_agent_authorizations_user").on(table.userId, table.createdAt),
+  index("idx_agent_authorizations_rate").on(table.requestIpHash, table.createdAt),
+  index("idx_agent_authorizations_created").on(table.createdAt),
+]);
+
 export const projectDependencies = sqliteTable(
   "project_dependencies",
   {

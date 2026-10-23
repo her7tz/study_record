@@ -1673,6 +1673,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
             <small>打开总目录<ChevronRight /></small>
           </button>
         </div>
+        <a href="/agent-access" className="px-6 py-3 text-sm text-slate-300 hover:text-white">Agent 只读授权</a>
         <div className="account-card">
           <span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span>
           <span><small>学习账户</small><strong title={user.email}>{user.email}</strong></span>
@@ -1681,6 +1682,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       </aside>
 
       <main className="main-content">
+        <a href="/agent-access" className="mb-4 inline-block text-sm text-blue-700 min-[721px]:hidden">Agent 只读授权</a>
         <TabsContent value="dashboard" className="view-content">
           <header className="topbar">
             <div>
