@@ -87,6 +87,18 @@ export const pointRedemptions = sqliteTable(
   (table) => [index("idx_point_redemptions_user_created").on(table.userId, table.createdAt)],
 );
 
+export const weeklyTasks = sqliteTable("weekly_tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").notNull(),
+  weekStart: text("week_start").notNull(),
+  title: text("title").notNull(),
+  note: text("note").notNull().default(""),
+  status: text("status").notNull().default("todo"),
+  deletedAt: text("deleted_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("idx_weekly_tasks_user_week").on(table.userId, table.weekStart, table.deletedAt)]);
+
 export const agentAuthorizations = sqliteTable("agent_authorizations", {
   id: text("id").primaryKey(),
   tokenHash: text("token_hash").notNull(),

@@ -69,6 +69,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectExperiments } from "@/components/project-experiments";
+import { WeeklyTasks } from "@/components/weekly-tasks";
 import { ProjectExperimentHistory } from "@/components/project-experiment-history";
 import { formatStudyDate } from "@/lib/date";
 import type { PointRedemption } from "@/lib/point-redemptions";
@@ -356,7 +357,7 @@ function DeleteRecord({ record, onDeleted }: { record: StudyRecord; onDeleted: (
   );
 }
 
-function TrashView({ active, revision, onRestored }: { active: boolean; revision: number; onRestored: () => void }) {
+function TrashView({ active, revision, onRestored }: { active: boolean; revision: number; onRestored: (kind: TrashItem["kind"]) => void }) {
   const [items, setItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -389,8 +390,8 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
         body: JSON.stringify({ kind: item.kind, id: item.id }),
       });
       setItems((current) => current.filter((entry) => `${entry.kind}:${entry.id}` !== key));
-      onRestored();
-      toast.success(item.kind === "redemption" ? "兑换记录已恢复，积分已重新扣除" : item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "记录已恢复");
+      onRestored(item.kind);
+      toast.success(item.kind === "weekly_task" ? "每周任务已恢复" : item.kind === "redemption" ? "兑换记录已恢复，积分已重新扣除" : item.kind === "project" ? "项目及关联内容已恢复" : item.kind === "experiment" ? "项目实验已恢复" : "记录已恢复");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "恢复失败，请稍后再试。");
     } finally {
@@ -409,9 +410,9 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
             return (
               <article className="trash-item" key={key}>
                 <div className="trash-item-copy">
-                  <span className={`trash-kind ${item.kind}`}>{item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : item.kind === "redemption" ? "积分兑换" : "记录"}</span>
+                  <span className={`trash-kind ${item.kind}`}>{item.kind === "weekly_task" ? "每周任务" : item.kind === "project" ? "学习项目" : item.kind === "experiment" ? "项目实验" : item.kind === "redemption" ? "积分兑换" : "记录"}</span>
                   <h2>{item.title}</h2>
-                  {item.kind === "redemption" ? <p>恢复后将重新扣除 {item.points} 积分，余额可为负数。</p> : item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : item.kind === "experiment" ? <p>{item.project_name} · 强度 {item.intensity_score} · {item.status === "todo" ? "待做" : "已完成"}</p> : <p>{item.record_count} 条记录、{item.experiment_count} 个实验会随项目一起恢复</p>}
+                  {item.kind === "weekly_task" ? <p>{item.week_start} 起的每周任务</p> : item.kind === "redemption" ? <p>恢复后将重新扣除 {item.points} 积分，余额可为负数。</p> : item.kind === "record" ? <p>{item.study_date}{item.project_name ? ` · ${item.project_name}` : " · 未分类"}</p> : item.kind === "experiment" ? <p>{item.project_name} · 强度 {item.intensity_score} · {item.status === "todo" ? "待做" : "已完成"}</p> : <p>{item.record_count} 条记录、{item.experiment_count} 个实验会随项目一起恢复</p>}
                   <small>恢复期限至 {deadline}</small>
                 </div>
                 <Button type="button" variant="outline" onClick={() => void restore(item)} disabled={restoringId !== null}>
@@ -422,7 +423,7 @@ function TrashView({ active, revision, onRestored }: { active: boolean; revision
           })}
         </div>
       ) : (
-        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验、记录和积分兑换会显示在这里。</p></div>
+        <div className="empty-state trash-empty"><span><Trash2 /></span><h3>回收站是空的</h3><p>删除的项目、实验、记录、每周任务和积分兑换会显示在这里。</p></div>
       )}
     </section>
   );
@@ -1405,7 +1406,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
   const [projectDependencies, setProjectDependencies] = useState(initialProjectDependencies);
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [pointsDialog, setPointsDialog] = useState<PointDistributionScope | "redemption" | null>(null);
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState("weekly");
   const [historySection, setHistorySection] = useState<"records" | "trash">("records");
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -1459,8 +1460,9 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
     }
   }, []);
 
-  const restoreTrash = useCallback(() => {
+  const restoreTrash = useCallback((kind: TrashItem["kind"]) => {
     setHistoryRevision((current) => current + 1);
+    if (kind === "weekly_task") return;
     void refreshAnalytics();
     void refreshProjects();
     void refreshProjectDependencies();
@@ -1657,6 +1659,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
           <span><strong>研习簿</strong><small>STUDY LOG</small></span>
         </div>
         <TabsList className="side-nav">
+          <TabsTrigger value="weekly"><CalendarRange />本周任务</TabsTrigger>
           <TabsTrigger value="dashboard"><LayoutDashboard />今日概览</TabsTrigger>
           <TabsTrigger value="history"><History />历史记录</TabsTrigger>
           <TabsTrigger value="projects"><FolderKanban />学习项目</TabsTrigger>
@@ -1683,6 +1686,9 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
       <main className="main-content">
         <a href="/agent-access" className="mb-4 inline-block text-sm text-blue-700 min-[721px]:hidden">Agent 只读授权</a>
+        <TabsContent value="weekly" className="view-content">
+          <WeeklyTasks today={today} onTrashChanged={() => setHistoryRevision(current => current + 1)} />
+        </TabsContent>
         <TabsContent value="dashboard" className="view-content">
           <header className="topbar">
             <div>
@@ -1717,7 +1723,7 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
 
         <TabsContent value="history" className="view-content">
           <header className="topbar history-header">
-            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目、实验、记录和积分兑换可在删除后 7 天内恢复。</p>}</div>
+            <div><p className="section-kicker">{historySection === "records" ? "全部积累" : "RECOVERY"}</p><h1>{historySection === "records" ? "历史记录" : "回收站"}</h1>{historySection === "records" ? <p className="page-description">共 {historyTotal} 条记录 · 累计强度 {historyTotalIntensity} · 积分 {historyTotalPoints} · 平均强度 {historyTotal ? historyAverage.toFixed(1) : "—"}</p> : <p className="page-description">项目、实验、记录、每周任务和积分兑换可在删除后 7 天内恢复。</p>}</div>
             {historySection === "records" ? <div className="header-actions">
               <a className="export-button" href="/api/export?format=csv" download><Download />导出 CSV</a>
               <a className="export-button" href="/api/export?format=json" download><Download />导出 JSON</a>
@@ -1785,10 +1791,11 @@ export function StudyDashboard({ initialRecords, initialRecordTotal, initialAnal
       <PointRedemptionDialog open={pointsDialog === "redemption"} onClose={() => setPointsDialog(null)} onChanged={() => { setHistoryRevision((current) => current + 1); void refreshAnalytics(); }} onOpenTrash={() => { setPointsDialog(null); setHistorySection("trash"); setView("history"); }} />
 
       <TabsList className="mobile-nav">
+        <TabsTrigger value="weekly"><CalendarRange />任务</TabsTrigger>
         <TabsTrigger value="dashboard"><LayoutDashboard />今日</TabsTrigger>
         <TabsTrigger value="history"><History />历史</TabsTrigger>
         <TabsTrigger value="projects"><FolderKanban />项目</TabsTrigger>
-        <TabsTrigger value="experiments"><FlaskConical />待做实验</TabsTrigger>
+        <TabsTrigger value="experiments"><FlaskConical />实验</TabsTrigger>
       </TabsList>
       <Toaster position="top-center" richColors />
     </Tabs>

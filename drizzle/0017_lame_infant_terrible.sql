@@ -1,0 +1,1 @@
+ALTER TABLE `weekly_tasks` ADD `status` text DEFAULT 'todo' NOT NULL;
