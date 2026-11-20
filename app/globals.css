@@ -740,3 +740,95 @@ button { cursor: pointer; }
   .redemption-list article > .redemption-copy { flex-basis: calc(100% - 110px); }
   .redemption-actions { margin-left: auto; }
 }
+
+@media (max-width: 720px) {
+  .main-content {
+    padding-bottom: calc(106px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-nav {
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .mobile-nav [data-slot="tabs-trigger"] {
+    flex-direction: column;
+    min-width: 0;
+    height: 52px;
+    gap: 3px;
+    font-size: .75rem;
+  }
+
+  .mobile-nav [data-slot="tabs-trigger"] svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .weekly-mark,
+  .record-card .record-action,
+  .weekly-tasks-list .record-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .weekly-task-copy h3,
+  .record-copy h3 {
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+  }
+
+  .weekly-task-state,
+  .weekly-tasks-switcher > span {
+    font-size: .8rem;
+  }
+
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"] {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .main-content :is(input, textarea, select),
+  [data-slot="dialog-content"] :is(input, textarea, select) {
+    font-size: 1rem;
+  }
+
+  [data-slot="dialog-content"] [data-slot="dialog-close"] {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    top: 6px;
+    right: 6px;
+  }
+
+  [data-slot="dialog-content"] [data-slot="dialog-header"] {
+    padding-inline: 26px;
+  }
+}
+
+@media (max-width: 540px) {
+  .heatmap-body { min-width: 0; }
+  .heat-cell { padding-inline: 4px; }
+
+  .heatmap-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .history-header .header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-header .header-actions .add-button {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .history-header .header-actions > * {
+    min-height: 44px;
+    justify-content: center;
+  }
+}
